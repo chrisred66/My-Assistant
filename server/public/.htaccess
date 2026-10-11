@@ -1,0 +1,11 @@
+Require all granted
+
+RewriteEngine On
+
+# Pass the Authorization header through to PHP
+RewriteCond %{HTTP:Authorization} .
+RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+
+# Send everything that isn't a real file to the front controller
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteRule ^ index.php [QSA,L]

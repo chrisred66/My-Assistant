@@ -1,0 +1,18 @@
+# Secrets - never commit
+.env
+server/.env
+
+# Dependencies
+server/vendor/
+node_modules/
+
+# Runtime data (audio uploads, logs, backups)
+server/storage/*
+!server/storage/.gitkeep
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/*
+!.vscode/extensions.json
+.idea/

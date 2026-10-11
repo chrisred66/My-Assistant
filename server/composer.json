@@ -1,0 +1,21 @@
+{
+    "name": "chris/chrismanager-server",
+    "description": "Personal API server for chrisManager: auth, AI relay, token usage, data.",
+    "type": "project",
+    "require": {
+        "php": ">=8.2",
+        "anthropic-ai/sdk": "^0.57",
+        "symfony/http-client": "^7.4",
+        "nyholm/psr7": "^1.8"
+    },
+    "autoload": {
+        "psr-4": {
+            "ChrisManager\\": "src/"
+        }
+    },
+    "config": {
+        "allow-plugins": {
+            "php-http/discovery": true
+        }
+    }
+}

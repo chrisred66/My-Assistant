@@ -1,0 +1,2 @@
+# This folder sits inside htdocs. Block web access to everything except server/public.
+Require all denied
