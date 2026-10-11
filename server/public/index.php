@@ -16,6 +16,7 @@ try {
 
     $router = new Router();
     require dirname(__DIR__) . '/src/routes.php';
+    require dirname(__DIR__) . '/src/Pt/routes.php';
 
     $result = $router->dispatch(Request::fromGlobals());
     echo json_encode($result ?? ['ok' => true], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);

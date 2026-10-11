@@ -15,11 +15,13 @@ Phone / laptop app ──(Tailscale)──► always-on desktop
 |---|---|
 | `server/` | PHP 8.2 API: auth, AI relay, usage, recordings |
 | `server/database/migrations/` | Numbered SQL files, applied by `bin/migrate.php` |
-| `app/` | Tauri 2 client (desktop + mobile), coming in the next phase |
+| `app/` | Tauri 2 desktop client (React + TypeScript); see `app/README.md` |
 
 ## Setting up a dev machine
 
-Needs: XAMPP (PHP 8.2+, MariaDB), Composer, Git.
+Needs: XAMPP (PHP 8.2+, MariaDB), Composer, Git. In `C:\xampp\php\php.ini`, enable
+`extension=zip` and `extension=intl` (intl lets `APP_TIMEZONE=system` follow the Windows timezone),
+then restart Apache.
 
 1. Clone into `htdocs`: `git clone <repo-url> C:\xampp\htdocs\chrisManager`
 2. Install dependencies:
@@ -69,14 +71,30 @@ Every call except `/health` and `/auth/login` needs `Authorization: Bearer <toke
 | POST | `/auth/login` | `{email, password, device}` | Returns a per-device token |
 | POST | `/auth/logout` | | Revokes the current token |
 | GET | `/auth/me` | | Current user |
-| POST | `/ai/translate` | `{text, provider?, model?}` | Arabic text → English, saved and token-logged |
-| POST | `/recordings` | multipart `audio`, `title?`, `recorded_at?`, `translate=1?`, `provider?` | Stores audio; optionally transcribes and translates it |
-| GET | `/recordings` | | Latest 200 recordings with their translations |
-| GET | `/transcripts` | | Latest 200 transcripts |
-| GET | `/usage/summary` | `?from=YYYY-MM-DD&to=YYYY-MM-DD&group=day\|month\|model` | Token totals and cost |
+| GET | `/ai/routing` | | Which provider and model handle translation, transcription and light tasks |
+| POST | `/ai/translate` | `{text, model?}` | Arabic text → English (Claude), saved and token-logged |
+| POST | `/live` | `{title?, recorded_at?}` | Starts a live recording; returns `recording_id`, `transcript_id` |
+| POST | `/live/{id}/chunk` | multipart `audio` (short clip), `seq`, `start_ms?`, `prompt?` | Transcribes one chunk (language auto-detected) and translates it unless English; returns `text`, `language`, `english` |
+| POST | `/live/{id}/finish` | multipart `audio` (whole recording), `duration_sec?` | Saves the audio and returns the assembled transcript |
+| POST | `/recordings` | multipart `audio`, `title?`, `recorded_at?`, `transcribe=1?` | Stores an audio file; with `transcribe`, also transcribes it and translates non-English speech. A failed step comes back as `transcribe_error` / `translate_error`; the file is kept |
+| POST | `/recordings/{id}/transcribe` | | Re-transcribes a saved recording as a whole (replaces its text and clears the translation) |
+| GET | `/recordings` | | Latest 200 recordings with transcript, detected `language` and English |
+| GET | `/transcripts` | | Latest 200 transcripts (`translated_text` is null when English or not yet translated) |
+| POST | `/transcripts/{id}/translate` | `{model?}` | Translates a saved transcript to English (no-op if English) |
+| GET | `/usage/summary` | `?from=YYYY-MM-DD&to=YYYY-MM-DD&group=day\|month\|model&view=providers\|app` | Token totals and cost: everything the providers report (default) or this app only |
+| GET | `/usage/providers` | | Sync status per provider, DeepSeek balance |
+| POST | `/usage/sync` | `{from?, to?}` | Pulls usage and billed cost from Anthropic and OpenAI (default: last 31 days) |
 | POST | `/usage` | `{provider, model, input_tokens, output_tokens, note?, occurred_at?}` | Manual usage entry |
 
-`provider` is `anthropic`, `openai` or `deepseek` (default: `TRANSLATE_PROVIDER`).
+**AI routing** is fixed on the server, not chosen by the app:
+
+| Job | Provider | Setting |
+|---|---|---|
+| Translation (Translate page, live chunks, files) | Claude | `TRANSLATE_PROVIDER=anthropic` |
+| Transcription (speech → text) | OpenAI | `OPENAI_TRANSCRIBE_MODEL` (OpenAI is the only speech-to-text integration) |
+| Light tasks (e.g. language detection) | DeepSeek | `LIGHT_PROVIDER=deepseek` |
+
+In `/usage`, `provider` is `anthropic`, `openai` or `deepseek`.
 
 Quick test from PowerShell:
 ```powershell
@@ -89,6 +107,35 @@ Invoke-RestMethod "$base/ai/translate" -Method Post -Headers $h -ContentType "ap
 Invoke-RestMethod "$base/usage/summary?group=model" -Headers $h
 ```
 
+## Users and PT Management
+
+- **Roles:** the first account is the `owner` (everything). Other people get `member` accounts,
+  created in Settings → Users, that only see **PT Management** at their access level: `view`,
+  `edit` (add, upload) or `admin` (also remove). They sign in with a username or email.
+- **PT Management** is the Green Bus Assessment toolkit, ported from the standalone `ptManagement`
+  app. Its data stays in its own database, `gba_database` (set `GBA_DB_NAME` to change it), which
+  the app reaches with the same MySQL user unless `GBA_DB_USER` / `GBA_DB_PASS` are set:
+  ```sql
+  GRANT ALL PRIVILEGES ON gba_database.* TO 'chrismanager'@'localhost';
+  ```
+
+## Usage from the providers
+
+The Usage page's **All provider usage** view shows what the providers themselves report, not just
+this app's calls:
+
+| Provider | Source | Needs |
+|---|---|---|
+| Anthropic | Usage & Cost Admin API: daily tokens per model, billed cost | `ANTHROPIC_ADMIN_KEY` (an `sk-ant-admin...` key; Console → Settings → Admin keys; organizations only, not individual accounts) |
+| OpenAI | Usage + Costs API: tokens, transcription seconds, billed cost | `OPENAI_ADMIN_KEY` (platform.openai.com → Settings → Organization → Admin keys) |
+| DeepSeek | No usage-history API: only the balance is shown; usage comes from this app | `DEEPSEEK_API_KEY` |
+
+Sync with the **Sync** button on the Usage page, or nightly with Task Scheduler:
+```
+C:\xampp\php\php.exe C:\xampp\htdocs\chrisManager\server\bin\sync-usage.php 3
+```
+Synced rows already include this app's calls, so the two are never added together.
+
 ## Token-usage costs
 
 Costs come from the `model_prices` table (USD per million tokens). Anthropic prices are seeded.
@@ -100,3 +147,4 @@ a later `effective_from` instead of editing the old one, so past costs stay corr
 - Never commit `.env` or API keys. Keep them in a password manager.
 - Never edit a migration that has already run. Add `00N_description.sql` instead.
 - `git pull` before you start, `git push` when you stop.
+- Record every change in `CHANGELOG.md` under **Unreleased**.

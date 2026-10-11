@@ -25,9 +25,14 @@ final class AnthropicProvider implements ChatProvider
         return Env::get('ANTHROPIC_MODEL', 'claude-opus-5-5');
     }
 
-    public function complete(string $system, string $user, string $model): ChatResult
+    public function complete(string $system, string $user, string $model, ?string $effort = null): ChatResult
     {
-        $client = new Client(apiKey: Env::require('ANTHROPIC_API_KEY'));
+        // Keys not scoped to a workspace must name one on every request.
+        $workspace = Env::get('ANTHROPIC_WORKSPACE_ID', '');
+        $client    = new Client(
+            apiKey: Env::require('ANTHROPIC_API_KEY'),
+            requestOptions: $workspace !== '' ? ['extraHeaders' => ['anthropic-workspace-id' => $workspace]] : null,
+        );
 
         try {
             // Beta endpoint for server-side fallbacks: if a safety classifier declines the request,
@@ -37,7 +42,7 @@ final class AnthropicProvider implements ChatProvider
                 maxTokens: 16000,
                 system: $system,
                 messages: [['role' => 'user', 'content' => $user]],
-                outputConfig: ['effort' => Env::get('ANTHROPIC_EFFORT', 'medium')],
+                outputConfig: ['effort' => $effort ?? Env::get('ANTHROPIC_EFFORT', 'medium')],
                 fallbacks: 'default',
                 betas: ['server-side-fallback-2026-07-01'],
             );

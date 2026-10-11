@@ -24,6 +24,9 @@ final class Db
                 PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
                 PDO::ATTR_EMULATE_PREPARES   => false,
             ]);
+            // Keep MySQL's NOW()/CURRENT_TIMESTAMP on the same clock as PHP's date() (APP_TIMEZONE),
+            // whatever timezone the database server itself runs in.
+            self::$pdo->exec("SET time_zone = '" . date('P') . "'");
         }
         return self::$pdo;
     }

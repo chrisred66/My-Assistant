@@ -12,11 +12,33 @@ final class Usage
         Db::insert('token_usage', $row + ['occurred_at' => date('Y-m-d H:i:s')]);
     }
 
+    /** Logs one chat-model call. */
+    public static function logChat(int $userId, string $provider, Ai\ChatResult $result, string $feature): void
+    {
+        self::log([
+            'user_id'            => $userId,
+            'provider'           => $provider,
+            'model'              => $result->model,
+            'feature'            => $feature,
+            'input_tokens'       => $result->inputTokens,
+            'output_tokens'      => $result->outputTokens,
+            'cache_read_tokens'  => $result->cacheReadTokens,
+            'cache_write_tokens' => $result->cacheWriteTokens,
+            'request_id'         => $result->requestId,
+        ]);
+    }
+
     /**
-     * Totals grouped by day, month or model, with cost from the latest model_prices row
-     * effective on each usage date. Cost is NULL where no price is configured.
+     * Totals grouped by day, month or model. Cost is the provider-billed amount where synced, else
+     * estimated from the latest model_prices row effective on each usage date (NULL if no price is set).
+     *
+     * $view "providers": everything each provider reported (synced rows), plus manual entries. For a
+     *                    provider that has never been synced (e.g. DeepSeek, which has no usage API),
+     *                    this app's own relay rows stand in. Synced rows already include this app's
+     *                    calls, so relay rows are never added on top of them.
+     * $view "app":       only calls made through this app.
      */
-    public static function summary(int $userId, string $from, string $to, string $groupBy): array
+    public static function summary(int $userId, string $from, string $to, string $groupBy, string $view = 'providers'): array
     {
         $groupExpr = match ($groupBy) {
             'day'   => 'DATE(u.occurred_at)',
@@ -24,22 +46,29 @@ final class Usage
             'model' => "CONCAT(u.provider, '/', u.model)",
             default => throw new HttpException(422, 'group must be day, month or model'),
         };
+        $viewFilter = match ($view) {
+            'app'       => "u.source = 'relay'",
+            'providers' => "(u.source IN ('sync', 'manual')
+                             OR (u.source = 'relay' AND u.provider NOT IN
+                                 (SELECT s.provider FROM usage_sync s WHERE s.synced_at IS NOT NULL)))",
+            default     => throw new HttpException(422, 'view must be providers or app'),
+        };
 
         $sql = "
             SELECT {$groupExpr} AS bucket,
                    u.provider,
-                   COUNT(*)                 AS requests,
+                   SUM(u.request_count)     AS requests,
                    SUM(u.input_tokens)      AS input_tokens,
                    SUM(u.output_tokens)     AS output_tokens,
                    SUM(u.cache_read_tokens) AS cache_read_tokens,
                    SUM(u.audio_seconds)     AS audio_seconds,
-                   SUM(
+                   SUM(COALESCE(u.cost_usd,
                        (u.input_tokens * p.input_per_mtok
                         + u.output_tokens * p.output_per_mtok
                         + u.cache_read_tokens * COALESCE(p.cache_read_per_mtok, p.input_per_mtok)
                         + u.cache_write_tokens * COALESCE(p.cache_write_per_mtok, p.input_per_mtok)) / 1000000
                        + COALESCE(u.audio_seconds / 60 * p.per_audio_minute, 0)
-                   ) AS cost_usd
+                   )) AS cost_usd
               FROM token_usage u
               LEFT JOIN model_prices p
                      ON p.provider = u.provider AND p.model = u.model
@@ -48,6 +77,7 @@ final class Usage
                          WHERE p2.provider = u.provider AND p2.model = u.model
                            AND p2.effective_from <= DATE(u.occurred_at))
              WHERE (u.user_id = :uid OR u.user_id IS NULL)
+               AND {$viewFilter}
                AND u.occurred_at >= :from AND u.occurred_at < DATE_ADD(:to, INTERVAL 1 DAY)
              GROUP BY bucket, u.provider
              ORDER BY bucket, u.provider";

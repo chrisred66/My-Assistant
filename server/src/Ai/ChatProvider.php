@@ -10,6 +10,9 @@ interface ChatProvider
 
     public function defaultModel(): string;
 
-    /** One system + user turn, returning the reply text and token usage. */
-    public function complete(string $system, string $user, string $model): ChatResult;
+    /**
+     * One system + user turn, returning the reply text and token usage.
+     * $effort overrides the provider's configured reasoning effort where it has one (e.g. "low" for live chunks).
+     */
+    public function complete(string $system, string $user, string $model, ?string $effort = null): ChatResult;
 }

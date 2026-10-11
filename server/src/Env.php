@@ -23,7 +23,8 @@ final class Env
             if ($value !== '' && ($value[0] === '"' || $value[0] === "'")) {
                 $value = trim($value, $value[0]);
             } else {
-                $value = trim(preg_replace('/\s+#.*$/', '', $value));
+                // A comment may follow whitespace, or be all there is once an empty value is trimmed.
+                $value = trim(preg_replace('/(^|\s+)#.*$/', '', $value));
             }
             self::$values[$key] = $value;
         }

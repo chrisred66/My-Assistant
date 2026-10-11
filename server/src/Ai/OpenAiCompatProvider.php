@@ -36,7 +36,7 @@ final class OpenAiCompatProvider implements ChatProvider
         return $model;
     }
 
-    public function complete(string $system, string $user, string $model): ChatResult
+    public function complete(string $system, string $user, string $model, ?string $effort = null): ChatResult
     {
         [$url, $keyVar] = self::ENDPOINTS[$this->provider];
         $data = HttpClient::postJson($url, Env::require($keyVar), [
