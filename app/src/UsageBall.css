@@ -1,0 +1,287 @@
+/* Desktop usage ball. The window is transparent; only the disc is drawn. A dark disc with a ring in the provider's
+   colour (same slots as the Usage charts) stays readable on any wallpaper. */
+
+html.ball-window,
+html.ball-window body,
+html.ball-window #root {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  background: transparent !important;
+  overflow: hidden;
+  user-select: none;
+}
+
+/* The window is 128 x 138: the name ribbon on top, overlapping the disc's ring, and the disc below. */
+.ball-frame {
+  --ring: #d95926;
+  --banner-ink: #141413;
+  position: absolute;
+  inset: 0;
+}
+.ball {
+  box-sizing: border-box;
+  position: absolute;
+  top: 16px;
+  left: 6px;
+  right: 6px;
+  bottom: 6px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #2c2c2a, #141413 70%);
+  border: 4px solid var(--ring);
+  color: #f0efec;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: grab;
+  transition: border-color 400ms ease;
+}
+.ball:active {
+  cursor: grabbing;
+}
+/* Anthropic orange, OpenAI white (the disc is always dark), DeepSeek blue. */
+.ball-anthropic {
+  --ring: #e8743f;
+}
+.ball-openai {
+  --ring: #e8e7e2;
+}
+.ball-deepseek {
+  --ring: #3987e5;
+  --banner-ink: #ffffff;
+}
+/* Claude Code: a lighter orange than Anthropic's. */
+.ball-claude_code {
+  --ring: #f7b47f;
+}
+
+.ball-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 1.1;
+  animation: ball-in 450ms ease;
+}
+@keyframes ball-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ball-body {
+    animation: none;
+  }
+  .ball {
+    transition: none;
+  }
+}
+
+.ball-provider {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ring);
+  filter: brightness(1.2);
+  letter-spacing: 0.02em;
+}
+.ball-value {
+  font-size: 26px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  margin-top: 2px;
+}
+.ball-caption {
+  font-size: 9px;
+  color: #c3c2b7;
+}
+.ball-month {
+  font-size: 9.5px;
+  color: #c3c2b7;
+  margin-top: 4px;
+  font-variant-numeric: tabular-nums;
+}
+.ball-problem {
+  font-size: 12px;
+  color: #c3c2b7;
+}
+
+.ball-dots {
+  position: absolute;
+  bottom: 12px;
+  display: flex;
+  gap: 4px;
+}
+.ball-dots i {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #6f6d68;
+}
+.ball-dots i.on {
+  background: #f0efec;
+}
+
+/* ---- Split mode: the main window's current activity on top, usage below ---- */
+
+.ball-split {
+  flex-direction: column;
+  justify-content: center;
+  gap: 3px;
+}
+.ball-activity,
+.ball-usage {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 1.1;
+  animation: ball-in 450ms ease;
+}
+.ball-icon {
+  width: 18px;
+  height: 18px;
+  color: #38bdf8;
+  filter: drop-shadow(0 0 4px rgba(56, 189, 248, 0.7));
+}
+.ball-icon svg {
+  width: 100%;
+  height: 100%;
+}
+.act-recording .ball-icon {
+  color: #f87171;
+  filter: drop-shadow(0 0 5px rgba(248, 113, 113, 0.85));
+  animation: ball-pulse 1.2s ease-in-out infinite;
+}
+.act-syncing .ball-icon svg {
+  animation: ball-spin 1.6s linear infinite;
+}
+@keyframes ball-pulse {
+  50% {
+    opacity: 0.45;
+  }
+}
+@keyframes ball-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.ball-act-label {
+  margin-top: 2px;
+  max-width: 92px;
+  font-size: 10px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ball-more {
+  color: #7c8aa0;
+  font-weight: 500;
+}
+.ball-act-time {
+  font-size: 9px;
+  color: #a9b6c8;
+  font-variant-numeric: tabular-nums;
+}
+.ball-divider {
+  width: 64px;
+  height: 1px;
+  margin: 2px 0;
+  background: linear-gradient(90deg, transparent, var(--ring), transparent);
+  opacity: 0.7;
+}
+.ball-usage .ball-provider {
+  font-size: 9px;
+}
+.ball-value.small {
+  font-size: 17px;
+  margin-top: 1px;
+}
+.ball-usage .ball-caption {
+  font-size: 8px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .act-recording .ball-icon,
+  .act-syncing .ball-icon svg,
+  .ball-activity,
+  .ball-usage {
+    animation: none;
+  }
+}
+
+/* ---- Name ribbon: a banner in the provider's colour, notched at both ends ---- */
+
+.ball-banner {
+  position: absolute;
+  top: 4px;
+  left: 50%;
+  z-index: 2;
+  transform: translateX(-50%);
+  box-sizing: border-box;
+  max-width: 124px;
+  padding: 3px 14px 4px;
+  background: var(--ring);
+  color: var(--banner-ink);
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+  clip-path: polygon(0 0, 100% 0, calc(100% - 7px) 50%, 100% 100%, 0 100%, 7px 50%);
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.5));
+  transition: background-color 400ms ease;
+  animation: ball-in 450ms ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ball-banner {
+    animation: none;
+    transition: none;
+  }
+}
+
+/* ---- Today's input (green, down) and output (red, up) ---- */
+
+.ball-io {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+}
+.ball-io.inline {
+  flex-direction: row;
+  gap: 8px;
+}
+.ball-io-row {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+.ball-arrow {
+  width: 15px;
+  height: 15px;
+  display: grid;
+}
+.ball-arrow svg {
+  width: 100%;
+  height: 100%;
+  stroke-width: 3;
+}
+.io-input .ball-arrow {
+  color: #4ade80;
+}
+.io-output .ball-arrow {
+  color: #f87171;
+}
+.ball-io-value {
+  font-size: 20px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.15;
+}
+.ball-io.inline .ball-arrow {
+  width: 11px;
+  height: 11px;
+}
+.ball-io.inline .ball-io-value {
+  font-size: 14px;
+}

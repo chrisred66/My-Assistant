@@ -2,7 +2,8 @@
 
 declare(strict_types=1);
 
-// Creates (or resets the password of) the login account.  Usage: php bin/create-user.php you@example.com
+// Creates (or resets the password of) a login account.  Usage: php bin/create-user.php you@example.com
+// The first account becomes the Super Admin; give everyone else access in the app (Settings → Users).
 // There is deliberately no sign-up endpoint: accounts only exist if made here.
 
 use ChrisManager\Db;
@@ -28,4 +29,9 @@ Db::run(
      ON DUPLICATE KEY UPDATE password_hash = VALUES(password_hash)',
     [$email, $hash],
 );
+// No Super Admin yet (a fresh install): this account is it.
+if (Db::one("SELECT 1 FROM users WHERE role = 'super_admin'") === null) {
+    Db::run("UPDATE users SET role = 'super_admin', general_plan = 'paid', pt_role = 'big_man' WHERE email = ?", [$email]);
+    echo "{$email} is the Super Admin.\n";
+}
 echo "Saved user {$email}.\n";

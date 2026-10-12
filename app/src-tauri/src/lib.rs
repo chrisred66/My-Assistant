@@ -63,13 +63,108 @@ fn token_delete() -> Result<(), String> {
     token::delete()
 }
 
+use tauri::Manager;
+
+mod claude_code;
+
+/// Claude Code token usage from its local session logs (see claude_code.rs), for the desktop ball.
+#[tauri::command]
+async fn claude_code_usage(days: Option<u64>) -> Result<Vec<claude_code::Entry>, String> {
+    let days = days.unwrap_or(40).min(400);
+    tauri::async_runtime::spawn_blocking(move || claude_code::usage(days))
+        .await
+        .map_err(|e| e.to_string())
+}
+
+mod fullscreen;
+mod pet_skin;
+
+/// The desktop pet's images, mood -> data URL (empty: the built-in whale).
+#[tauri::command]
+fn pet_skin_list(app: tauri::AppHandle) -> Result<std::collections::HashMap<String, String>, String> {
+    pet_skin::list(&app)
+}
+
+/// Saves one mood's image (base64).
+#[tauri::command]
+fn pet_skin_save(app: tauri::AppHandle, mood: String, ext: String, data: String) -> Result<(), String> {
+    pet_skin::save(&app, &mood, &ext, &data)
+}
+
+/// The credit line shown with the pet's images (artists, licence).
+#[tauri::command]
+fn pet_skin_credit(app: tauri::AppHandle) -> Result<String, String> {
+    pet_skin::credit(&app)
+}
+
+#[tauri::command]
+fn pet_skin_set_credit(app: tauri::AppHandle, text: String) -> Result<(), String> {
+    pet_skin::set_credit(&app, &text)
+}
+
+/// Removes one mood's image, or all of them when `mood` is null.
+#[tauri::command]
+fn pet_skin_clear(app: tauri::AppHandle, mood: Option<String>) -> Result<(), String> {
+    pet_skin::clear(&app, mood.as_deref())
+}
+
+mod system_audio;
+
+/// Meeting mode: start sending what an output device plays (16 kHz mono PCM blocks) to `on_audio`. Returns the rate.
+#[tauri::command]
+fn system_audio_start(
+    state: tauri::State<system_audio::SystemAudio>,
+    on_audio: tauri::ipc::Channel,
+    device: Option<String>,
+) -> Result<u32, String> {
+    system_audio::start(&state, on_audio, device)
+}
+
+/// Output devices meeting mode can capture.
+#[tauri::command]
+fn system_audio_devices() -> Result<Vec<system_audio::OutputDevice>, String> {
+    system_audio::devices()
+}
+
+#[tauri::command]
+fn system_audio_stop(state: tauri::State<system_audio::SystemAudio>) {
+    system_audio::stop(&state);
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![token_get, token_set, token_delete])
+        .manage(system_audio::SystemAudio::default())
+        .setup(|app| {
+            fullscreen::watch(app.handle().clone());
+            Ok(())
+        })
+        .invoke_handler(tauri::generate_handler![
+            token_get,
+            token_set,
+            token_delete,
+            claude_code_usage,
+            system_audio_start,
+            system_audio_stop,
+            system_audio_devices,
+            pet_skin_list,
+            pet_skin_save,
+            pet_skin_clear,
+            pet_skin_credit,
+            pet_skin_set_credit
+        ])
+        // Closing the main window quits the app, including the desktop usage ball (otherwise the hidden or floating
+        // ball window would keep the app running with no way back to the main window).
+        .on_window_event(|window, event| {
+            if window.label() == "main" {
+                if let tauri::WindowEvent::CloseRequested { .. } = event {
+                    window.app_handle().exit(0);
+                }
+            }
+        })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

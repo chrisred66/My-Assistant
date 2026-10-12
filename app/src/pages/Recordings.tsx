@@ -1,5 +1,7 @@
 import { Fragment, useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { CopyButton, ErrorText } from "../components/common";
+import { TranscriptEditor } from "../components/TranscriptEdit";
+import MeetingPanel, { MeetingSpeakers } from "./MeetingPanel";
 import { api, type Recording, type UploadResult } from "../lib/api";
 import {
   errorMessage,
@@ -10,15 +12,17 @@ import {
   toSqlDateTime,
 } from "../lib/format";
 import { LiveRecorder, type LiveChunk } from "../lib/liveRecorder";
+import { startActivity, track } from "../lib/activity";
 
-const OPENAI_HINT = "Transcription uses OpenAI on the server, so it needs OPENAI_API_KEY in server/.env.";
+const KEY_HINT = "Transcription needs its AI API key set in server/.env.";
 const MAX_IN_FLIGHT = 2; // chunks being transcribed at once; more would only queue at the server
 
 function withHint(message: string): string {
-  return /OPENAI_API_KEY|openai/i.test(message) ? `${message} ${OPENAI_HINT}` : message;
+  return /AI API key|rejected the server's API key/i.test(message) ? `${message} ${KEY_HINT}` : message;
 }
 
-export default function Recordings() {
+/** `canTranscribe` false (free plan): record and save audio only; nothing is sent for transcription. */
+export default function Recordings({ canTranscribe = true }: { canTranscribe?: boolean }) {
   const [list, setList] = useState<Recording[] | null>(null);
   const [listError, setListError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<number | null>(null);
@@ -46,15 +50,16 @@ export default function Recordings() {
 
   return (
     <section className="page">
-      <header className="page-header">
-        <h1>Recordings</h1>
-        <p className="muted">
-          Speak and watch the transcript appear. Anything not in English is translated as you go. The recording is saved when you stop.
-        </p>
-      </header>
 
-      <LivePanel onSaved={saved} />
-      <FileUpload onSaved={saved} />
+      {!canTranscribe && (
+        <p className="adjusted-note small">
+          Free plan: recordings are saved as audio. Live transcripts, meetings with speakers, transcribing and translating recordings are on the paid
+          plan.
+        </p>
+      )}
+      <LivePanel onSaved={saved} canTranscribe={canTranscribe} />
+      {canTranscribe && <MeetingPanel onSaved={saved} />}
+      <FileUpload onSaved={saved} canTranscribe={canTranscribe} />
 
       <div className="row space-between">
         <h2>Saved recordings</h2>
@@ -83,7 +88,10 @@ export default function Recordings() {
               return (
                 <Fragment key={r.id}>
                   <tr className={open ? "expanded" : undefined}>
-                    <td>{r.title || r.original_name || `Recording #${r.id}`}</td>
+                    <td>
+                      {r.title || r.original_name || (r.kind === "meeting" ? `Meeting #${r.id}` : `Recording #${r.id}`)}
+                      {r.kind === "meeting" && <span className="lang-tag">Meeting</span>}
+                    </td>
                     <td>{formatDateTime(r.recorded_at ?? r.created_at)}</td>
                     <td className="num">{formatDuration(r.duration_sec)}</td>
                     <td>{r.source_text ? languageName(r.language) : "—"}</td>
@@ -97,7 +105,7 @@ export default function Recordings() {
                   {open && (
                     <tr className="details-row">
                       <td colSpan={6}>
-                        <RecordingDetails recording={r} onChanged={() => void refresh()} />
+                        <RecordingDetails recording={r} onChanged={() => void refresh()} canTranscribe={canTranscribe} />
                       </td>
                     </tr>
                   )}
@@ -132,7 +140,7 @@ interface Segment {
 
 type Phase = "idle" | "starting" | "recording" | "finishing";
 
-function LivePanel({ onSaved }: { onSaved: (recordingId: number) => void }) {
+function LivePanel({ onSaved, canTranscribe }: { onSaved: (recordingId: number) => void; canTranscribe: boolean }) {
   const [phase, setPhase] = useState<Phase>("idle");
   const [title, setTitle] = useState("");
   const [segments, setSegments] = useState<Segment[]>([]);
@@ -210,7 +218,8 @@ function LivePanel({ onSaved }: { onSaved: (recordingId: number) => void }) {
     lastTextRef.current = "";
     setPhase("starting");
 
-    const recorder = new LiveRecorder({ onChunk: enqueue, onLevel: setLevel });
+    // Free plan: chunks aren't sent (no transcription); the whole recording is still saved on Stop.
+    const recorder = new LiveRecorder({ onChunk: canTranscribe ? enqueue : () => {}, onLevel: setLevel });
     try {
       const session = await api.liveStart(title.trim() || undefined, toSqlDateTime(new Date()));
       recordingIdRef.current = session.recording_id;
@@ -260,6 +269,12 @@ function LivePanel({ onSaved }: { onSaved: (recordingId: number) => void }) {
     const chunk = chunksRef.current.get(seq);
     if (chunk) enqueue(chunk);
   }
+
+  // Tell the desktop ball while recording (and while the recording is being saved).
+  useEffect(() => {
+    if (phase === "recording") return startActivity("recording", "Recording");
+    if (phase === "finishing") return startActivity("saving", "Saving audio");
+  }, [phase]);
 
   // Leaving the page mid-recording abandons it.
   useEffect(
@@ -359,7 +374,7 @@ function LivePanel({ onSaved }: { onSaved: (recordingId: number) => void }) {
 
 // ---- Upload an existing file ------------------------------------------------------
 
-function FileUpload({ onSaved }: { onSaved: (recordingId: number) => void }) {
+function FileUpload({ onSaved, canTranscribe }: { onSaved: (recordingId: number) => void; canTranscribe: boolean }) {
   const [file, setFile] = useState<File | null>(null);
   const [url, setUrl] = useState<string | null>(null);
   const [title, setTitle] = useState("");
@@ -381,11 +396,11 @@ function FileUpload({ onSaved }: { onSaved: (recordingId: number) => void }) {
     setBusy(true);
     setError(null);
     try {
-      const res = await api.uploadRecording(file, file.name, {
+      const res = await track("uploading", "Uploading", () => api.uploadRecording(file, file.name, {
         title: title.trim() || undefined,
         recordedAt: toSqlDateTime(new Date(file.lastModified)),
-        transcribe: true,
-      });
+        transcribe: canTranscribe,
+      }));
       setResult(res);
       pick(undefined);
       setTitle("");
@@ -422,7 +437,7 @@ function FileUpload({ onSaved }: { onSaved: (recordingId: number) => void }) {
               <input value={title} onChange={(e) => setTitle(e.target.value)} maxLength={255} placeholder="Optional" />
             </label>
             <button className="primary align-end" type="submit" disabled={busy}>
-              {busy ? "Uploading & transcribing…" : "Upload & transcribe"}
+              {busy ? (canTranscribe ? "Uploading & transcribing…" : "Uploading…") : canTranscribe ? "Upload & transcribe" : "Upload"}
             </button>
           </div>
         )}
@@ -430,7 +445,7 @@ function FileUpload({ onSaved }: { onSaved: (recordingId: number) => void }) {
         {result && (
           <div className="stack-tight">
             <p className="small">Saved recording #{result.id}. Open it in the list below.</p>
-            {result.transcribe_error && <p className="error-text">Transcription failed: {withHint(result.transcribe_error)}</p>}
+            {result.transcribe_error && canTranscribe && <p className="error-text">Transcription failed: {withHint(result.transcribe_error)}</p>}
             {result.translate_error && <p className="error-text">Translation failed: {result.translate_error}</p>}
           </div>
         )}
@@ -441,24 +456,57 @@ function FileUpload({ onSaved }: { onSaved: (recordingId: number) => void }) {
 
 // ---- One saved recording --------------------------------------------------------
 
-function RecordingDetails({ recording: r, onChanged }: { recording: Recording; onChanged: () => void }) {
-  const [busy, setBusy] = useState<"transcribe" | "translate" | null>(null);
+function RecordingDetails({ recording: r, onChanged, canTranscribe }: { recording: Recording; onChanged: () => void; canTranscribe: boolean }) {
+  const [busy, setBusy] = useState<"transcribe" | "translate" | "delete" | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
   const hasAudio = r.size_bytes > 0;
+  const name = r.title || r.original_name || `Recording #${r.id}`;
+
+  async function rename() {
+    const title = window.prompt("Recording title", r.title || r.original_name || "");
+    if (title === null) return;
+    setError(null);
+    try {
+      await api.renameRecording(r.id, title);
+      onChanged();
+    } catch (e) {
+      setError(errorMessage(e));
+    }
+  }
+
+  async function remove() {
+    if (!window.confirm(`Delete "${name}"? Its audio and transcript are deleted too.`)) return;
+    setBusy("delete");
+    setError(null);
+    try {
+      await api.deleteRecording(r.id);
+      onChanged();
+    } catch (e) {
+      setError(errorMessage(e));
+      setBusy(null);
+    }
+  }
   const english = r.language === "en";
 
   async function run(step: "transcribe" | "translate") {
-    if (step === "transcribe" && r.source_text && !window.confirm("Transcribe the whole recording again? This replaces the current text and its translation.")) {
+    const again =
+      r.kind === "meeting"
+        ? "Transcribe the whole meeting again, with speakers? This replaces the current text and its translation."
+        : "Transcribe the whole recording again? This replaces the current text and its translation.";
+    if (step === "transcribe" && r.source_text && !window.confirm(again)) {
       return;
     }
     setBusy(step);
     setError(null);
     try {
       if (step === "transcribe") {
-        const t = await api.transcribeRecording(r.id);
-        if (t.language !== "en") await api.translateTranscript(t.transcript_id);
+        const t = await track("transcribing", "Transcribing", () => api.transcribeRecording(r.id));
+        if (t.language !== "en") await track("translating", "Translating", () => api.translateTranscript(t.transcript_id));
       } else if (r.transcript_id) {
-        await api.translateTranscript(r.transcript_id);
+        const transcriptId = r.transcript_id;
+        await track("translating", "Translating", () => api.translateTranscript(transcriptId));
       }
       onChanged();
     } catch (e) {
@@ -469,51 +517,93 @@ function RecordingDetails({ recording: r, onChanged }: { recording: Recording; o
     }
   }
 
-  return (
-    <div className="two-col details">
-      <div className="stack-tight">
-        <div className="row space-between">
-          <h3>Original{r.source_text && r.language ? ` · ${languageName(r.language)}` : ""}</h3>
-          <div className="row">
-            {r.source_text && <CopyButton text={r.source_text} />}
-            {hasAudio && (
-              <button className="small-btn" onClick={() => void run("transcribe")} disabled={busy !== null}>
-                {busy === "transcribe" ? "Transcribing…" : r.source_text ? "Transcribe again" : "Transcribe"}
-              </button>
-            )}
-          </div>
-        </div>
-        {r.source_text ? (
-          <p className="prose" dir="auto">
-            {r.source_text}
-          </p>
-        ) : (
-          <p className="muted small">{hasAudio ? "Not transcribed yet." : "This recording wasn't finished, so no audio was saved."}</p>
-        )}
-      </div>
+  const actions = (
+    <div className="row recording-actions">
+      <button className="small-btn" onClick={() => void rename()} disabled={busy !== null}>
+        Rename
+      </button>
+      {r.transcript_id && r.source_text && !editing && (
+        <button className="small-btn" onClick={() => (setEditing(true), setNote(null))} disabled={busy !== null}>
+          Edit transcript
+        </button>
+      )}
+      <button className="small-btn danger" onClick={() => void remove()} disabled={busy !== null}>
+        {busy === "delete" ? "Deleting…" : "Delete recording"}
+      </button>
+      {note && <span className="muted small">{note}</span>}
+      {r.kind === "meeting" && <MeetingSpeakers recordingId={r.id} onChanged={onChanged} />}
+    </div>
+  );
 
-      <div className="stack-tight">
-        <div className="row space-between">
-          <h3>English</h3>
-          <div className="row">
-            {r.translated_text && <CopyButton text={r.translated_text} />}
-            {r.source_text && !english && (
-              <button className="small-btn" onClick={() => void run("translate")} disabled={busy !== null}>
-                {busy === "translate" ? "Translating…" : r.translated_text ? "Translate again" : "Translate"}
-              </button>
-            )}
-          </div>
-        </div>
-        {r.translated_text ? (
-          <p className="prose">{r.translated_text}</p>
-        ) : (
-          <p className="muted small">
-            {english ? "The original is in English." : r.source_text ? "Not translated yet." : "Transcribe first."}
-          </p>
-        )}
-      </div>
-      <div className="details-error">
+  if (editing && r.transcript_id && r.source_text) {
+    return (
+      <div className="stack-tight details">
+        {actions}
         <ErrorText message={error} />
+        <TranscriptEditor
+          id={r.transcript_id}
+          source={r.source_text}
+          english={r.translated_text}
+          language={r.language}
+          onCancel={() => setEditing(false)}
+          onSaved={(learning) => {
+            setEditing(false);
+            setNote(learning ? "Saved. Your corrections will be applied to future transcripts." : "Saved.");
+            onChanged();
+          }}
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div className="stack-tight details">
+      {actions}
+      <div className="two-col">
+        <div className="stack-tight">
+          <div className="row space-between">
+            <h3>Original{r.source_text && r.language ? ` · ${languageName(r.language)}` : ""}</h3>
+            <div className="row">
+              {r.source_text && <CopyButton text={r.source_text} />}
+              {hasAudio && canTranscribe && (
+                <button className="small-btn" onClick={() => void run("transcribe")} disabled={busy !== null}>
+                  {busy === "transcribe" ? "Transcribing…" : r.source_text ? "Transcribe again" : "Transcribe"}
+                </button>
+              )}
+            </div>
+          </div>
+          {r.source_text ? (
+            <p className="prose" dir="auto">
+              {r.source_text}
+            </p>
+          ) : (
+            <p className="muted small">{!hasAudio ? "This recording wasn't finished, so no audio was saved." : canTranscribe ? "Not transcribed yet." : "Audio only: transcription is on the paid plan."}</p>
+          )}
+        </div>
+
+        <div className="stack-tight">
+          <div className="row space-between">
+            <h3>English</h3>
+            <div className="row">
+              {r.translated_text && <CopyButton text={r.translated_text} />}
+              {r.source_text && !english && canTranscribe && (
+                <button className="small-btn" onClick={() => void run("translate")} disabled={busy !== null}>
+                  {busy === "translate" ? "Translating…" : r.translated_text ? "Translate again" : "Translate"}
+                </button>
+              )}
+            </div>
+          </div>
+          {r.translated_text ? (
+            <p className="prose">{r.translated_text}</p>
+          ) : (
+            <p className="muted small">
+              {english ? "The original is in English." : r.source_text ? "Not translated yet." : "Transcribe first."}
+            </p>
+          )}
+        </div>
+        <div className="details-error">
+          <ErrorText message={error} />
+        </div>
       </div>
     </div>
   );

@@ -1,37 +1,81 @@
 {
-  "$schema": "https://schema.tauri.app/config/2",
-  "productName": "chrisManager",
-  "version": "0.1.0",
-  "identifier": "com.chris.chrismanager",
-  "build": {
-    "beforeDevCommand": "npm run dev",
-    "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "npm run build",
-    "frontendDist": "../dist"
-  },
-  "app": {
-    "windows": [
-      {
-        "title": "chrisManager",
-        "width": 1200,
-        "height": 800,
-        "minWidth": 720,
-        "minHeight": 520
-      }
-    ],
-    "security": {
-      "csp": null
+    "$schema": "https://schema.tauri.app/config/2",
+    "productName": "My Assistant",
+    "version": "0.1.0",
+    "identifier": "com.chris.chrismanager",
+    "build": {
+        "beforeDevCommand": "npm run dev",
+        "devUrl": "http://localhost:1420",
+        "beforeBuildCommand": "npm run build",
+        "frontendDist": "../dist"
+    },
+    "app": {
+        "windows": [
+            {
+                "title": "My Assistant",
+                "width": 1200,
+                "height": 800,
+                "minWidth": 720,
+                "minHeight": 520,
+                "label": "main",
+                "additionalBrowserArgs": "--lang=en-GB --disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection"
+            },
+            {
+                "label": "ball",
+                "title": "Usage",
+                "url": "index.html#ball",
+                "width": 128,
+                "height": 138,
+                "resizable": false,
+                "maximizable": false,
+                "minimizable": false,
+                "decorations": false,
+                "transparent": true,
+                "shadow": false,
+                "alwaysOnTop": true,
+                "skipTaskbar": true,
+                "visible": false,
+                "focus": false,
+                "additionalBrowserArgs": "--lang=en-GB --disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection"
+            },
+            {
+                "label": "pet",
+                "title": "Pet",
+                "url": "index.html#pet",
+                "width": 250,
+                "height": 262,
+                "resizable": false,
+                "maximizable": false,
+                "minimizable": false,
+                "decorations": false,
+                "transparent": true,
+                "shadow": false,
+                "alwaysOnTop": true,
+                "skipTaskbar": true,
+                "visible": false,
+                "focus": false,
+                "additionalBrowserArgs": "--lang=en-GB --disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection"
+            }
+        ],
+        "security": {
+            "csp": null,
+            "assetProtocol": {
+                "enable": true,
+                "scope": [
+                    "$APPDATA/pet-pack/**"
+                ]
+            }
+        }
+    },
+    "bundle": {
+        "active": true,
+        "targets": "all",
+        "icon": [
+            "icons/32x32.png",
+            "icons/128x128.png",
+            "icons/128x128@2x.png",
+            "icons/icon.icns",
+            "icons/icon.ico"
+        ]
     }
-  },
-  "bundle": {
-    "active": true,
-    "targets": "all",
-    "icon": [
-      "icons/32x32.png",
-      "icons/128x128.png",
-      "icons/128x128@2x.png",
-      "icons/icon.icns",
-      "icons/icon.ico"
-    ]
-  }
 }

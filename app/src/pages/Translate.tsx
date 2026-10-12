@@ -1,7 +1,9 @@
-import { useState, type FormEvent } from "react";
+import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { CopyButton, ErrorText } from "../components/common";
-import { api, type TranslateResult } from "../lib/api";
+import { api, type Transcript, type TranslateResult } from "../lib/api";
+import { TranscriptCard } from "./Transcripts";
 import { errorMessage, formatInteger } from "../lib/format";
+import { track } from "../lib/activity";
 
 export default function Translate() {
   const [text, setText] = useState("");
@@ -9,13 +11,28 @@ export default function Translate() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<TranslateResult | null>(null);
+  const [history, setHistory] = useState<Transcript[] | null>(null);
+
+  // Your earlier translations (typed text, not recordings), to look at, edit or delete.
+  const loadHistory = useCallback(async () => {
+    try {
+      setHistory((await api.transcripts()).filter((t) => t.recording_id === null));
+    } catch {
+      setHistory([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadHistory();
+  }, [loadHistory]);
 
   async function submit(e: FormEvent) {
     e.preventDefault();
     setBusy(true);
     setError(null);
     try {
-      setResult(await api.translate(text, model.trim() || undefined));
+      setResult(await track("translating", "Translating", () => api.translate(text, model.trim() || undefined)));
+      void loadHistory();
     } catch (err) {
       setError(errorMessage(err));
     } finally {
@@ -25,10 +42,6 @@ export default function Translate() {
 
   return (
     <section className="page">
-      <header className="page-header">
-        <h1>Translate</h1>
-        <p className="muted">Arabic text to English, translated by Claude. Every translation is saved to Transcripts and token-logged.</p>
-      </header>
 
       <form className="stack" onSubmit={(e) => void submit(e)}>
         <label className="field">
@@ -47,7 +60,7 @@ export default function Translate() {
 
         <div className="row wrap">
           <label className="field inline grow">
-            <span>Claude model (optional)</span>
+            <span>Model (optional)</span>
             <input value={model} onChange={(e) => setModel(e.target.value)} placeholder="Server default" spellCheck={false} />
           </label>
           <button className="primary align-end" type="submit" disabled={busy || !text.trim()}>
@@ -70,6 +83,15 @@ export default function Translate() {
           </p>
         </div>
       )}
+
+      <h2>Your translations</h2>
+      {history === null && <p className="muted">Loading…</p>}
+      {history?.length === 0 && <p className="muted">No translations yet.</p>}
+      <div className="stack">
+        {history?.map((t) => (
+          <TranscriptCard key={t.id} transcript={t} onChanged={() => void loadHistory()} />
+        ))}
+      </div>
     </section>
   );
 }

@@ -1,0 +1,853 @@
+/* ==========================================================================================================
+   Theme layer: the app's look (loaded after App.css, which keeps the layout and the chart palette).
+   Dark: "deep space" — navy-black, faint cyan/violet glows and grid, frosted glass, electric-cyan accent.
+   Light: the same structure in cool white.
+   Theme choice: <html data-theme="light|dark">, or no attribute to follow the system (see lib/theme.ts).
+   Dark tokens are repeated under both selectors on purpose: the media query covers "system", the attribute
+   covers an explicit choice. The chart colours (--c1…, --series-*, status) are unchanged.
+   ========================================================================================================== */
+
+:root {
+  color-scheme: light;
+  --font-display: "Space Grotesk Variable", "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
+  --font-body: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, sans-serif;
+
+  --page: #eef2f8;
+  --surface: #ffffff;
+  --surface-2: #eef3fa;
+  --glass: rgba(255, 255, 255, 0.78);
+  --glass-strong: rgba(255, 255, 255, 0.9);
+  --text: #0b1220;
+  --text-2: #3d4a5f;
+  --muted: #627089;
+  --border: rgba(15, 40, 80, 0.12);
+  --border-strong: rgba(15, 40, 80, 0.2);
+  --grid: #e1e7f0;
+  --axis: #c3cedd;
+  --accent: #0284c7;
+  --accent-2: #7c3aed;
+  --accent-ink: #ffffff;
+  --accent-soft: rgba(2, 132, 199, 0.1);
+  --glow: 0 0 0 3px rgba(2, 132, 199, 0.18);
+  --glow-strong: 0 6px 22px rgba(2, 132, 199, 0.28);
+  --wash: rgba(15, 40, 80, 0.04);
+  --danger: #c43535;
+  --error: #b42323;
+  --shadow: 0 1px 2px rgba(15, 40, 80, 0.06), 0 8px 24px rgba(15, 40, 80, 0.06);
+  --bg-glow-1: rgba(2, 132, 199, 0.1);
+  --bg-glow-2: rgba(124, 58, 237, 0.08);
+  --bg-grid: rgba(15, 40, 80, 0.035);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --page: #070b12;
+    --surface: #0f1622;
+    --surface-2: #172131;
+    --glass: rgba(15, 22, 34, 0.66);
+    --glass-strong: rgba(15, 22, 34, 0.88);
+    --text: #e6edf7;
+    --text-2: #a9b6c8;
+    --muted: #7c8aa0;
+    --border: rgba(120, 170, 255, 0.13);
+    --border-strong: rgba(120, 170, 255, 0.24);
+    --grid: #1b2636;
+    --axis: #2a3a52;
+    --accent: #38bdf8;
+    --accent-2: #8b5cf6;
+    --accent-ink: #04111d;
+    --accent-soft: rgba(56, 189, 248, 0.12);
+    --glow: 0 0 0 1px rgba(56, 189, 248, 0.45), 0 0 18px rgba(56, 189, 248, 0.25);
+    --glow-strong: 0 0 24px rgba(56, 189, 248, 0.35);
+    --wash: rgba(120, 170, 255, 0.06);
+    --danger: #f87171;
+    --error: #fca5a5;
+    --shadow: 0 1px 0 rgba(255, 255, 255, 0.03) inset, 0 12px 32px rgba(0, 0, 0, 0.35);
+    --bg-glow-1: rgba(56, 189, 248, 0.13);
+    --bg-glow-2: rgba(139, 92, 246, 0.13);
+    --bg-grid: rgba(120, 170, 255, 0.045);
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #070b12;
+  --surface: #0f1622;
+  --surface-2: #172131;
+  --glass: rgba(15, 22, 34, 0.66);
+  --glass-strong: rgba(15, 22, 34, 0.88);
+  --text: #e6edf7;
+  --text-2: #a9b6c8;
+  --muted: #7c8aa0;
+  --border: rgba(120, 170, 255, 0.13);
+  --border-strong: rgba(120, 170, 255, 0.24);
+  --grid: #1b2636;
+  --axis: #2a3a52;
+  --accent: #38bdf8;
+  --accent-2: #8b5cf6;
+  --accent-ink: #04111d;
+  --accent-soft: rgba(56, 189, 248, 0.12);
+  --glow: 0 0 0 1px rgba(56, 189, 248, 0.45), 0 0 18px rgba(56, 189, 248, 0.25);
+  --glow-strong: 0 0 24px rgba(56, 189, 248, 0.35);
+  --wash: rgba(120, 170, 255, 0.06);
+  --danger: #f87171;
+  --error: #fca5a5;
+  --shadow: 0 1px 0 rgba(255, 255, 255, 0.03) inset, 0 12px 32px rgba(0, 0, 0, 0.35);
+  --bg-glow-1: rgba(56, 189, 248, 0.13);
+  --bg-glow-2: rgba(139, 92, 246, 0.13);
+  --bg-grid: rgba(120, 170, 255, 0.045);
+}
+
+/* ---- Base ---- */
+
+:root {
+  font-family: var(--font-body);
+}
+body {
+  background-color: var(--page);
+  background-image:
+    radial-gradient(900px 520px at 8% -12%, var(--bg-glow-1), transparent 62%),
+    radial-gradient(800px 520px at 108% 4%, var(--bg-glow-2), transparent 60%),
+    linear-gradient(var(--bg-grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--bg-grid) 1px, transparent 1px);
+  background-size: auto, auto, 36px 36px, 36px 36px;
+  background-attachment: fixed;
+  -webkit-font-smoothing: antialiased;
+}
+h1,
+h2,
+.brand,
+.tile-value {
+  font-family: var(--font-display);
+  letter-spacing: -0.01em;
+}
+h1 {
+  font-size: 1.75rem;
+  font-weight: 650;
+}
+h2 {
+  font-size: 1.08rem;
+  font-weight: 600;
+}
+h3 {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 0.82rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+::selection {
+  background: var(--accent-soft);
+}
+
+/* Thin scrollbars that match the theme. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+
+/* ---- Shell ---- */
+
+.shell {
+  grid-template-columns: 216px 1fr;
+}
+.sidebar {
+  background: var(--glass);
+  backdrop-filter: blur(18px) saturate(1.2);
+  -webkit-backdrop-filter: blur(18px) saturate(1.2);
+  border-right: 1px solid var(--border);
+  padding: 18px 12px;
+  gap: 4px;
+  position: relative;
+}
+/* A faint luminous edge down the sidebar. */
+.sidebar::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: -1px;
+  bottom: 0;
+  width: 1px;
+  background: linear-gradient(180deg, transparent, var(--accent) 30%, var(--accent-2) 70%, transparent);
+  opacity: 0.35;
+  pointer-events: none;
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 700;
+  font-size: 1.12rem;
+  padding: 4px 10px 20px;
+  background: linear-gradient(90deg, var(--text), var(--accent));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.brand::before {
+  content: "";
+  flex: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, #fff, var(--accent) 45%, var(--accent-2));
+  box-shadow: 0 0 14px var(--accent);
+}
+.nav-item {
+  position: relative;
+  padding: 9px 12px;
+  border-radius: 9px;
+  font-size: 0.93rem;
+  transition: background 150ms ease, color 150ms ease;
+}
+.nav-item.active {
+  background: linear-gradient(90deg, var(--accent-soft), transparent 90%);
+  color: var(--text);
+  font-weight: 600;
+}
+.nav-item.active::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 7px;
+  bottom: 7px;
+  width: 3px;
+  border-radius: 3px;
+  background: linear-gradient(180deg, var(--accent), var(--accent-2));
+  box-shadow: 0 0 10px var(--accent);
+}
+.sidebar-footer {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px 6px 4px;
+  border-top: 1px solid var(--border);
+}
+.sidebar-user {
+  font-size: 0.82rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-2);
+}
+
+/* ---- Surfaces ---- */
+
+.card,
+.tile,
+.data-table {
+  background: var(--glass);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+}
+.card {
+  border-radius: 14px;
+  padding: 20px 22px;
+}
+.tile {
+  position: relative;
+  border-radius: 14px;
+  padding: 16px 18px;
+  overflow: hidden;
+}
+/* Accent line across the top of each tile. */
+.tile::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 2px;
+  background: linear-gradient(90deg, var(--accent), var(--accent-2), transparent);
+  opacity: 0.8;
+}
+.tile-label {
+  font-size: 0.74rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.tile-value {
+  font-size: 1.75rem;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+.tile.hero .tile-value {
+  font-size: 2.5rem;
+  background: linear-gradient(90deg, var(--text), var(--accent));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* Sticky page header: a tinted band across the whole content area (the box-shadow spreads the background
+   sideways past the page's max-width; .content's overflow clips it to the content area). */
+.sticky-head {
+  background: color-mix(in srgb, var(--page) 90%, transparent);
+  box-shadow: 0 0 0 100vmax color-mix(in srgb, var(--page) 90%, transparent);
+  clip-path: inset(0 -100vmax);
+  border-bottom-color: transparent;
+}
+
+/* ---- Controls ---- */
+
+button,
+.file-btn {
+  border-radius: 9px;
+  border-color: var(--border-strong);
+  background: var(--glass-strong);
+  transition: border-color 150ms ease, box-shadow 150ms ease, background 150ms ease, transform 150ms ease;
+}
+button:hover:not(:disabled),
+.file-btn:hover {
+  background: var(--surface-2);
+  border-color: var(--accent);
+}
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+.file-btn:focus-within {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: var(--glow);
+}
+button.primary {
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  border-color: transparent;
+  color: #fff;
+  font-weight: 600;
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.15);
+}
+button.primary:hover:not(:disabled) {
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  filter: brightness(1.08);
+  box-shadow: var(--glow-strong);
+  transform: translateY(-1px);
+}
+button.danger {
+  background: transparent;
+}
+button.danger:hover:not(:disabled) {
+  border-color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+}
+.link-btn,
+.link-btn:hover:not(:disabled) {
+  background: none;
+  border: none;
+  box-shadow: none;
+  transform: none;
+}
+
+input,
+select,
+textarea {
+  border-radius: 9px;
+  border-color: var(--border-strong);
+  background: var(--glass-strong);
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+input:hover,
+select:hover,
+textarea:hover {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border-strong));
+}
+.field > span {
+  font-size: 0.74rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* Pill-shaped tab bars and switches. */
+.segmented {
+  padding: 3px;
+  gap: 2px;
+  border-radius: 11px;
+  border-color: var(--border);
+  background: var(--glass);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+.segmented button {
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-2);
+  padding: 6px 13px;
+}
+.segmented button:hover:not(:disabled) {
+  background: var(--wash);
+  border-color: transparent;
+  color: var(--text);
+}
+.segmented button.on {
+  background: linear-gradient(135deg, var(--accent-soft), color-mix(in srgb, var(--accent-2) 12%, transparent));
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  color: var(--text);
+  box-shadow: 0 0 14px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+/* ---- Tables ---- */
+
+.data-table {
+  border-radius: 12px;
+}
+.data-table th {
+  background: color-mix(in srgb, var(--surface-2) 70%, transparent);
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.data-table tbody tr {
+  transition: background 120ms ease;
+}
+.data-table tbody tr:hover td {
+  background: var(--wash);
+}
+/* Tables inside a card don't need a second glass layer. */
+.card .data-table,
+details.card .data-table {
+  background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  box-shadow: none;
+}
+
+/* ---- Charts ---- */
+
+.chart-tooltip {
+  background: var(--glass-strong);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border-color: var(--border-strong);
+  border-radius: 10px;
+}
+
+/* ---- Odds and ends ---- */
+
+details.card > summary {
+  font-family: var(--font-display);
+  font-weight: 600;
+}
+.badge {
+  border-radius: 6px;
+  background: var(--wash);
+}
+.adjust-panel {
+  border-radius: 12px;
+  background: var(--wash);
+}
+.picker > summary,
+.picker-panel {
+  background: var(--glass-strong);
+  border-color: var(--border-strong);
+  border-radius: 10px;
+}
+.center-screen .card {
+  box-shadow: var(--shadow), 0 0 60px var(--bg-glow-1);
+}
+
+/* ---- Theme switch (sidebar footer and Settings) ---- */
+
+.theme-switch {
+  display: inline-flex;
+  padding: 3px;
+  gap: 2px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--glass);
+}
+.theme-switch button {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+}
+.theme-switch button svg {
+  width: 16px;
+  height: 16px;
+}
+.theme-switch button:hover:not(:disabled) {
+  background: var(--wash);
+  border-color: transparent;
+  color: var(--text);
+}
+.theme-switch button.on {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+  box-shadow: 0 0 12px color-mix(in srgb, var(--accent) 25%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  button.primary:hover:not(:disabled) {
+    transform: none;
+  }
+  * {
+    transition: none !important;
+  }
+}
+@media (max-width: 760px) {
+  .shell {
+    grid-template-columns: 1fr;
+  }
+  .sidebar::after {
+    display: none;
+  }
+}
+
+/* ---- Roles: picker after sign-in, switcher in the sidebar ---- */
+
+.role-picker {
+  width: 100%;
+  max-width: 760px;
+}
+.role-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 10px;
+}
+.role-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 12px 14px;
+  text-align: left;
+  border-radius: 12px;
+  font-size: 0.92rem;
+}
+.role-card:hover:not(:disabled) {
+  box-shadow: var(--glow);
+}
+.role-switcher {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.role-switcher > span {
+  font-size: 0.7rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.role-switcher select {
+  width: 100%;
+  font-size: 0.85rem;
+  padding: 6px 8px;
+}
+
+/* ---- Back to top: floating button in the scrolling content area ---- */
+
+.back-to-top {
+  position: fixed;
+  right: 28px;
+  bottom: 28px;
+  z-index: 30;
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--glass-strong);
+  backdrop-filter: blur(10px);
+  color: var(--accent);
+  box-shadow: var(--glow-strong);
+  opacity: 0;
+  transform: translateY(12px);
+  pointer-events: none;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+.back-to-top.shown {
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+}
+.back-to-top:hover {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+.back-to-top svg {
+  width: 20px;
+  height: 20px;
+}
+@media (max-width: 720px) {
+  .back-to-top {
+    right: 16px;
+    bottom: 16px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .back-to-top {
+    transition: none;
+  }
+}
+
+/* ---- Transcripts: learned rules ---- */
+
+.habits summary .muted {
+  font-weight: 400;
+}
+.habit-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.habit-list li {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--accent-soft);
+  font-size: 0.9rem;
+}
+.habit-list li .link-btn {
+  font-size: 1rem;
+  line-height: 1;
+}
+.recording-actions {
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+.transcript-edit textarea {
+  width: 100%;
+  min-height: 140px;
+  resize: vertical;
+}
+
+/* ---- Super Admin: view as another account ---- */
+
+.sidebar-user-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  min-width: 0;
+}
+.icon-btn {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border-radius: 8px;
+  color: var(--accent);
+}
+.icon-btn svg {
+  width: 17px;
+  height: 17px;
+}
+/* The menu opens above the sidebar footer and may extend over the page, so the footer doesn't clip it and the sidebar
+   sits above the content. */
+.sidebar {
+  z-index: 5;
+}
+.sidebar-footer {
+  position: relative;
+  overflow: visible;
+}
+.account-menu {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 6px;
+  z-index: 40;
+  width: 270px;
+  max-height: 60vh;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  background: var(--glass-strong);
+  backdrop-filter: blur(14px);
+  box-shadow: var(--shadow), var(--glow-strong);
+}
+.account-menu input {
+  width: 100%;
+}
+.account-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  overflow-y: auto;
+}
+.account-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  padding: 7px 10px;
+  text-align: left;
+  border-radius: 8px;
+  font-size: 0.88rem;
+}
+.account-item.back {
+  flex-direction: row;
+  align-items: baseline;
+  gap: 6px;
+  color: var(--accent);
+}
+.viewing-as {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 1px solid #f59e0b;
+  border-radius: 10px;
+  background: rgba(245, 158, 11, 0.12);
+  font-size: 0.82rem;
+}
+
+/* ---- Usage: input and output as separate bars (output striped) ---- */
+
+.hatch-line {
+  stroke: var(--surface);
+  stroke-width: 2.2;
+  stroke-opacity: 0.75;
+}
+.swatch-in {
+  background: var(--muted);
+}
+.swatch-out {
+  background: repeating-linear-gradient(45deg, var(--muted) 0 2px, var(--surface) 2px 4px);
+  box-shadow: inset 0 0 0 1px var(--muted);
+}
+.legend-sep {
+  width: 1px;
+  align-self: stretch;
+  background: var(--border-strong);
+}
+.tooltip-row.io {
+  grid-template-columns: 12px 1fr auto auto;
+  column-gap: 12px;
+}
+.tooltip-head {
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+
+/* ---- Meeting mode: speakers ---- */
+
+label.check {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+label.check input {
+  margin-top: 2px;
+}
+.speaker-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.speaker-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 0.85rem;
+}
+.meeting-transcript {
+  padding: 4px 0;
+}
+.meeting-turn {
+  padding: 8px 14px 8px 12px;
+  border-left: 3px solid transparent;
+  border-bottom: 1px solid var(--grid);
+}
+.meeting-turn:last-child {
+  border-bottom: none;
+}
+.meeting-turn .prose {
+  margin: 2px 0 0;
+}
+.meeting-who {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-2);
+}
+.turn-c1 { border-left-color: var(--c1); }
+.turn-c2 { border-left-color: var(--c2); }
+.turn-c3 { border-left-color: var(--c3); }
+.turn-c4 { border-left-color: var(--c4); }
+.turn-c5 { border-left-color: var(--c5); }
+.turn-c6 { border-left-color: var(--c6); }
+.turn-c7 { border-left-color: var(--c7); }
+.turn-c8 { border-left-color: var(--c8); }
+
+
+/* ---- Settings: desktop pet images ---- */
+
+.pet-skin summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.pet-skin-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: 10px;
+  margin: 10px 0;
+}
+.pet-skin-slot {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--wash);
+}
+.pet-skin-preview {
+  display: grid;
+  place-items: center;
+  width: 96px;
+  height: 96px;
+  border-radius: 8px;
+  background: repeating-conic-gradient(var(--wash) 0 25%, transparent 0 50%) 0 0 / 14px 14px;
+}
+.pet-skin-preview img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+.file-btn {
+  position: relative;
+  overflow: hidden;
+  cursor: pointer;
+}
+.file-btn input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}

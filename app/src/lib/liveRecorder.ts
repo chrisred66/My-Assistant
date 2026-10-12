@@ -1,5 +1,8 @@
 // Live recording: keeps a compressed copy of the whole recording (MediaRecorder) and, in parallel,
 // cuts the raw audio into short self-contained WAV chunks at natural pauses for live transcription.
+// Meeting mode can add what the computer is playing (the other people in an online meeting), captured natively
+// (Rust command system_audio_start, WASAPI loopback) and mixed with the microphone; both outputs use the mix.
+import { Channel, invoke } from "@tauri-apps/api/core";
 
 export interface LiveChunk {
   seq: number; // 0, 1, 2, ... in recording order
@@ -14,6 +17,18 @@ export interface LiveRecorderOptions {
   minChunkMs?: number; // don't cut before this much audio...
   maxChunkMs?: number; // ...and always cut by this much
   silenceMs?: number; // a pause this long ends a chunk
+  mic?: boolean; // record the microphone (default true)
+  systemAudio?: boolean; // also record what the computer plays (Windows desktop app only)
+  systemDevice?: string | null; // which output device to capture; null/undefined: the default
+}
+
+/** Output devices the computer's audio can be captured from (empty outside the Windows desktop app). */
+export async function outputDevices(): Promise<{ name: string; default: boolean }[]> {
+  try {
+    return await invoke<{ name: string; default: boolean }[]>("system_audio_devices");
+  } catch {
+    return [];
+  }
 }
 
 export interface LiveRecording {
@@ -36,10 +51,49 @@ class Tap extends AudioWorkletProcessor {
   }
 }
 registerProcessor("tap", Tap);
+
+// Plays samples posted from the main thread (the computer's audio) into the graph; silence when none are queued,
+// and drops the oldest audio if more than a second piles up, so it never lags behind the microphone.
+class Feed extends AudioWorkletProcessor {
+  constructor() {
+    super();
+    this.queue = [];
+    this.offset = 0;
+    this.port.onmessage = (e) => {
+      this.queue.push(e.data);
+      let total = -this.offset;
+      for (const b of this.queue) total += b.length;
+      while (total > sampleRate && this.queue.length > 1) {
+        total -= this.queue[0].length - this.offset;
+        this.queue.shift();
+        this.offset = 0;
+      }
+    };
+  }
+  process(_inputs, outputs) {
+    const out = outputs[0][0];
+    let i = 0;
+    while (i < out.length && this.queue.length) {
+      const b = this.queue[0];
+      const n = Math.min(out.length - i, b.length - this.offset);
+      out.set(b.subarray(this.offset, this.offset + n), i);
+      i += n;
+      this.offset += n;
+      if (this.offset >= b.length) {
+        this.queue.shift();
+        this.offset = 0;
+      }
+    }
+    out.fill(0, i);
+    return true;
+  }
+}
+registerProcessor("feed", Feed);
 `;
 
 export class LiveRecorder {
-  private stream: MediaStream | null = null;
+  private stream: MediaStream | null = null; // the microphone (when used)
+  private systemOn = false;
   private ctx: AudioContext | null = null;
   private media: MediaRecorder | null = null;
   private mediaParts: Blob[] = [];
@@ -61,13 +115,56 @@ export class LiveRecorder {
   constructor(private readonly opts: LiveRecorderOptions) {}
 
   async start(): Promise<void> {
-    this.stream = await navigator.mediaDevices.getUserMedia({
-      audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-    });
+    const useMic = this.opts.mic !== false;
+    const useSystem = this.opts.systemAudio === true;
+    if (!useMic && !useSystem) throw new Error("Choose the microphone, the computer's audio, or both");
+    if (useMic) {
+      this.stream = await navigator.mediaDevices.getUserMedia({
+        audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+      });
+    }
+
+    // One graph mixes the sources; the chunks and the whole recording both take the mix. 16 kHz mono is what speech
+    // models use.
+    this.ctx = new AudioContext({ sampleRate: 16000 });
+    this.sampleRate = this.ctx.sampleRate;
+    const mix = this.ctx.createGain();
+    if (this.stream) this.ctx.createMediaStreamSource(this.stream).connect(mix);
+    const sink = this.ctx.createGain();
+    sink.gain.value = 0; // keeps the graph running without playing anything back
+    sink.connect(this.ctx.destination);
+
+    const worklets = !!this.ctx.audioWorklet;
+    if (worklets) {
+      const url = URL.createObjectURL(new Blob([TAP_WORKLET], { type: "application/javascript" }));
+      await this.ctx.audioWorklet.addModule(url);
+      URL.revokeObjectURL(url);
+    }
+    if (useSystem) {
+      if (!worklets) throw new Error("This system can't mix the computer's audio");
+      const feed = new AudioWorkletNode(this.ctx, "feed", { outputChannelCount: [1] });
+      feed.connect(mix);
+      const ratio = this.sampleRate / 16000; // the native capture sends 16 kHz
+      const channel = new Channel<ArrayBuffer | number[]>();
+      channel.onmessage = (data) => {
+        const bytes = data instanceof ArrayBuffer ? new Int16Array(data) : new Int16Array(new Uint8Array(data).buffer);
+        const n = Math.round(bytes.length * ratio);
+        const out = new Float32Array(n);
+        for (let i = 0; i < n; i++) out[i] = bytes[Math.min(bytes.length - 1, Math.floor(i / ratio))] / 32768;
+        feed.port.postMessage(out, [out.buffer]);
+      };
+      await invoke("system_audio_start", { onAudio: channel, device: this.opts.systemDevice ?? null });
+      this.systemOn = true;
+    }
 
     // Whole recording, compressed (~32 kbps keeps an hour around 15 MB).
+    const recordFrom = useSystem ? (() => {
+      const dest = this.ctx!.createMediaStreamDestination();
+      mix.connect(dest);
+      return dest.stream;
+    })() : this.stream!;
     const mimeType = FULL_TYPES.find((t) => MediaRecorder.isTypeSupported(t));
-    this.media = new MediaRecorder(this.stream, { ...(mimeType ? { mimeType } : {}), audioBitsPerSecond: 32000 });
+    this.media = new MediaRecorder(recordFrom, { ...(mimeType ? { mimeType } : {}), audioBitsPerSecond: 32000 });
     this.mediaType = this.media.mimeType || mimeType || "audio/webm";
     this.mediaParts = [];
     this.media.ondataavailable = (e) => {
@@ -75,27 +172,22 @@ export class LiveRecorder {
     };
     this.media.start(1000);
 
-    // Raw samples for the transcription chunks. 16 kHz mono is what speech models use.
-    this.ctx = new AudioContext({ sampleRate: 16000 });
-    this.sampleRate = this.ctx.sampleRate;
-    const source = this.ctx.createMediaStreamSource(this.stream);
-    const sink = this.ctx.createGain();
-    sink.gain.value = 0; // keeps the graph running without playing the mic back
-    sink.connect(this.ctx.destination);
-
-    if (this.ctx.audioWorklet) {
-      const url = URL.createObjectURL(new Blob([TAP_WORKLET], { type: "application/javascript" }));
-      await this.ctx.audioWorklet.addModule(url);
-      URL.revokeObjectURL(url);
+    if (worklets) {
       const tap = new AudioWorkletNode(this.ctx, "tap");
       tap.port.onmessage = (e: MessageEvent<Float32Array>) => this.onSamples(e.data);
-      source.connect(tap).connect(sink);
+      mix.connect(tap).connect(sink);
     } else {
       // Older engines: ScriptProcessorNode is deprecated but universally available.
       const proc = this.ctx.createScriptProcessor(4096, 1, 1);
       proc.onaudioprocess = (e) => this.onSamples(new Float32Array(e.inputBuffer.getChannelData(0)));
-      source.connect(proc).connect(sink);
+      mix.connect(proc).connect(sink);
     }
+  }
+
+  private async stopSystem() {
+    if (!this.systemOn) return;
+    this.systemOn = false;
+    await invoke("system_audio_stop").catch(() => {});
   }
 
   /** Stops recording, emits the final chunk, and returns the whole recording. */
@@ -112,6 +204,7 @@ export class LiveRecorder {
       this.media.stop();
     });
 
+    await this.stopSystem();
     this.stream?.getTracks().forEach((t) => t.stop());
     await this.ctx?.close();
     this.stream = null;
@@ -125,6 +218,7 @@ export class LiveRecorder {
     this.chunk = [];
     this.chunkSamples = 0;
     if (this.media && this.media.state !== "inactive") this.media.stop();
+    await this.stopSystem();
     this.stream?.getTracks().forEach((t) => t.stop());
     await this.ctx?.close();
   }

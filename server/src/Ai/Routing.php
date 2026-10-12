@@ -41,6 +41,11 @@ final class Routing
             'translate'  => ['provider' => $translate->name(), 'model' => $model($translate)],
             'transcribe' => ['provider' => 'openai', 'model' => Env::get('OPENAI_TRANSCRIBE_MODEL', 'whisper-1')],
             'light'      => ['provider' => $light->name(), 'model' => $model($light)],
+            // PT charging AI schedule (Pt\ChargingAi) always uses DeepSeek: it needs JSON-mode replies.
+            'charging'   => ['provider' => 'deepseek', 'model' => $model(new OpenAiCompatProvider('deepseek'))],
+            // Learning from transcript edits and applying them (Habits): Chinese through DeepSeek, others through OpenAI.
+            'habits_zh'    => Habits::describe()['zh'],
+            'habits_other' => Habits::describe()['other'],
         ];
     }
 

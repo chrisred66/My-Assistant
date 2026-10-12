@@ -8,6 +8,19 @@ const host = process.env.TAURI_DEV_HOST;
 export default defineConfig(() => ({
   plugins: [react()],
 
+  // Pre-bundle every Tauri module the app uses. Otherwise the first import of a new one makes the dev server
+  // re-bundle while windows are open, and a window can end up with mixed old/new code (blank screen until reloaded).
+  optimizeDeps: {
+    include: [
+      "@tauri-apps/api/core",
+      "@tauri-apps/api/event",
+      "@tauri-apps/api/window",
+      "@tauri-apps/plugin-http",
+      "@tauri-apps/plugin-opener",
+      "@tauri-apps/plugin-store",
+    ],
+  },
+
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
   //
   // 1. prevent Vite from obscuring rust errors

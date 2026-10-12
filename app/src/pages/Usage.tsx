@@ -1,21 +1,32 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import { BarList, LineChart, type BarItem as ShareItem, type Color, type Point } from "../components/charts";
 import { ErrorText, ProviderSelect } from "../components/common";
 import { HorizontalBars, Legend, StackedColumns, type BarItem, type StackedPoint } from "../components/UsageChart";
 import {
   api,
   PROVIDER_LABELS,
-  PROVIDERS,
+  SOURCE_LABELS,
+  USAGE_SOURCES,
+  type AiRoute,
+  type AiRouting,
   type Provider,
   type ProviderSyncStatus,
   type UsageGroup,
   type UsageProviders,
   type UsageRow,
+  type UsageSource,
   type UsageView,
 } from "../lib/api";
-import { errorMessage, formatCompact, formatDateTime, formatInteger, formatUsd, toIsoDate, toSqlDateTime } from "../lib/format";
+import { errorMessage, formatCompact, formatDateTime, formatInteger, formatUsd, LOCALE, toIsoDate, toSqlDateTime } from "../lib/format";
+import { track } from "../lib/activity";
+import { claudeCodeEntries, claudeCodeRows } from "../lib/claudeCode";
 
 type Preset = "month" | "7" | "30" | "90" | "custom";
+// Tokens: input and output are drawn as separate bars side by side (output striped).
 type Metric = "cost" | "tokens";
+
+/** Source → its colour (the --series-* tokens: Anthropic orange, OpenAI black/white, DeepSeek blue, Claude Code light orange). */
+const PROVIDER_COLOR: Record<UsageSource, Color> = { anthropic: "anthropic", openai: "openai", deepseek: "deepseek", claude_code: "claude_code" };
 
 function presetRange(preset: Exclude<Preset, "custom">): { from: string; to: string } {
   const today = new Date();
@@ -42,15 +53,15 @@ function buckets(from: string, to: string, group: "day" | "month"): string[] {
 function shortLabel(bucket: string, group: "day" | "month"): string {
   const d = new Date(group === "day" ? `${bucket}T00:00:00` : `${bucket}-01T00:00:00`);
   return group === "day"
-    ? d.toLocaleDateString(undefined, { month: "short", day: "numeric" })
-    : d.toLocaleDateString(undefined, { month: "short", year: "2-digit" });
+    ? d.toLocaleDateString(LOCALE, { month: "short", day: "numeric" })
+    : d.toLocaleDateString(LOCALE, { month: "short", year: "2-digit" });
 }
 
 function longLabel(bucket: string, group: "day" | "month"): string {
   const d = new Date(group === "day" ? `${bucket}T00:00:00` : `${bucket}-01T00:00:00`);
   return group === "day"
-    ? d.toLocaleDateString(undefined, { weekday: "short", year: "numeric", month: "short", day: "numeric" })
-    : d.toLocaleDateString(undefined, { year: "numeric", month: "long" });
+    ? d.toLocaleDateString(LOCALE, { weekday: "short", year: "numeric", month: "short", day: "numeric" })
+    : d.toLocaleDateString(LOCALE, { year: "numeric", month: "long" });
 }
 
 const metricValue = (r: UsageRow, metric: Metric) => (metric === "cost" ? (r.cost_usd ?? 0) : r.input_tokens + r.output_tokens);
@@ -59,7 +70,7 @@ export default function Usage() {
   const [preset, setPreset] = useState<Preset>("month");
   const [range, setRange] = useState(presetRange("month"));
   const [group, setGroup] = useState<UsageGroup>("day");
-  const [metric, setMetric] = useState<Metric>("cost");
+  const [metric, setMetric] = useState<Metric>("tokens");
   const [view, setView] = useState<UsageView>("providers");
   const [rows, setRows] = useState<UsageRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -69,7 +80,14 @@ export default function Usage() {
   const load = useCallback(async () => {
     setError(null);
     try {
-      setRows((await api.usageSummary(range.from, range.to, group, view)).rows);
+      const server = api.usageSummary(range.from, range.to, group, view);
+      // All usage also includes Claude Code, read from this computer's logs (nothing outside the desktop app).
+      const days = (Date.now() - new Date(`${range.from}T00:00:00`).getTime()) / 86_400_000 + 2;
+      const local = view === "providers" ? claudeCodeEntries(days) : Promise.resolve(null);
+      const [summary, entries] = await Promise.all([server, local]);
+      const rows = [...summary.rows, ...(entries ? claudeCodeRows(entries, range.from, range.to, group) : [])];
+      rows.sort((a, b) => (a.bucket < b.bucket ? -1 : a.bucket > b.bucket ? 1 : a.provider < b.provider ? -1 : 1));
+      setRows(rows);
     } catch (e) {
       setError(errorMessage(e));
       setRows([]);
@@ -106,19 +124,27 @@ export default function Usage() {
       t.requests += r.requests;
       t.input += r.input_tokens;
       t.output += r.output_tokens;
-      if (r.cost_usd === null && r.input_tokens + r.output_tokens + r.audio_seconds > 0) t.unpriced++;
+      if (r.cost_usd === null && r.provider !== "claude_code" && r.input_tokens + r.output_tokens + r.audio_seconds > 0) t.unpriced++;
     }
     return t;
   }, [rows]);
 
-  const providersPresent = useMemo(() => PROVIDERS.filter((p) => rows?.some((r) => r.provider === p)), [rows]);
+  const providersPresent = useMemo(() => USAGE_SOURCES.filter((p) => rows?.some((r) => r.provider === p)), [rows]);
 
   const stacked: StackedPoint[] = useMemo(() => {
     if (!rows || group === "model") return [];
     return buckets(range.from, range.to, group).map((b) => {
-      const values: Partial<Record<Provider, number>> = {};
-      for (const r of rows.filter((x) => x.bucket === b)) values[r.provider] = (values[r.provider] ?? 0) + metricValue(r, metric);
-      return { label: shortLabel(b, group), title: longLabel(b, group), values };
+      const values: Partial<Record<UsageSource, number>> = {};
+      const out: Partial<Record<UsageSource, number>> = {};
+      for (const r of rows.filter((x) => x.bucket === b)) {
+        if (metric === "cost") {
+          values[r.provider] = (values[r.provider] ?? 0) + (r.cost_usd ?? 0);
+        } else {
+          values[r.provider] = (values[r.provider] ?? 0) + r.input_tokens;
+          out[r.provider] = (out[r.provider] ?? 0) + r.output_tokens;
+        }
+      }
+      return { label: shortLabel(b, group), title: longLabel(b, group), values, ...(metric === "tokens" ? { out } : {}) };
     });
   }, [rows, group, range, metric]);
 
@@ -128,22 +154,69 @@ export default function Usage() {
       .map((r) => ({
         label: r.bucket.slice(r.provider.length + 1) || r.bucket,
         provider: r.provider,
-        value: metricValue(r, metric),
+        value: metric === "cost" ? (r.cost_usd ?? 0) : r.input_tokens,
+        ...(metric === "tokens" ? { out: r.output_tokens } : {}),
         detail: `${formatInteger(r.requests)} requests · ${formatCompact(r.input_tokens)} in / ${formatCompact(r.output_tokens)} out`,
       }))
-      .sort((a, b) => b.value - a.value);
+      .sort((a, b) => b.value + (b.out ?? 0) - (a.value + (a.out ?? 0)));
   }, [rows, group, metric]);
 
-  const fmt = metric === "cost" ? formatUsd : (v: number) => `${formatInteger(v)} tokens`;
+  // Tokens by provider, input and output as separate bars.
+  const providerBars: BarItem[] = useMemo(() => {
+    if (!rows || metric !== "tokens") return [];
+    return USAGE_SOURCES.filter((p) => rows.some((r) => r.provider === p))
+      .map((p) => {
+        const mine = rows.filter((r) => r.provider === p);
+        return {
+          label: SOURCE_LABELS[p],
+          provider: p,
+          value: mine.reduce((n, r) => n + r.input_tokens, 0),
+          out: mine.reduce((n, r) => n + r.output_tokens, 0),
+        };
+      })
+      .sort((a, b) => b.value + b.out - (a.value + a.out));
+  }, [rows, metric]);
+
+  // Share of the range's total per provider.
+  const shares: ShareItem[] = useMemo(() => {
+    const sum: Partial<Record<UsageSource, { v: number; requests: number }>> = {};
+    for (const r of rows ?? []) {
+      const e = (sum[r.provider] ??= { v: 0, requests: 0 });
+      e.v += metricValue(r, metric);
+      e.requests += r.requests;
+    }
+    const total = Object.values(sum).reduce((n, e) => n + (e?.v ?? 0), 0) || 1;
+    return USAGE_SOURCES.filter((p) => sum[p])
+      .map((p) => ({
+        key: p,
+        label: SOURCE_LABELS[p],
+        value: sum[p]!.v,
+        color: PROVIDER_COLOR[p],
+        detail: `${((sum[p]!.v / total) * 100).toFixed(1)}% of the total · ${formatInteger(sum[p]!.requests)} requests`,
+      }))
+      .sort((a, b) => b.value - a.value);
+  }, [rows, metric]);
+
+  // Running total through the range, one line per provider.
+  const cumulative: Point[] = useMemo(() => {
+    const run: Partial<Record<UsageSource, number>> = {};
+    return stacked.map((p) => {
+      for (const k of providersPresent) run[k] = (run[k] ?? 0) + (p.values[k] ?? 0) + (p.out?.[k] ?? 0); // tokens: in + out
+      return { label: p.label, title: `${p.title} (to date)`, values: { ...run } };
+    });
+  }, [stacked, providersPresent]);
+
+  // Token values without a unit: the chart titles say "Input tokens" / "Output tokens".
+  const fmt = metric === "cost" ? formatUsd : formatInteger;
   const fmtTick = metric === "cost" ? (v: number) => (v === 0 ? "$0" : formatUsd(v)) : formatCompact;
 
   return (
     <section className="page">
-      <header className="page-header">
+      <header className="page-header sticky-head">
         <h1>Usage</h1>
         <p className="muted">
           {view === "providers"
-            ? "Everything Anthropic and OpenAI report for your accounts (synced from their usage APIs), DeepSeek usage from this app, and manual entries."
+            ? "Everything Anthropic and OpenAI report for your accounts (synced from their usage APIs), DeepSeek usage from this app, Claude Code on this computer, and manual entries."
             : "Only the calls made through this app."}
         </p>
       </header>
@@ -206,6 +279,8 @@ export default function Usage() {
         </button>
       </div>
 
+      <Routing />
+
       {view === "providers" && sources && (
         <Sources
           sources={sources}
@@ -229,6 +304,9 @@ export default function Usage() {
           <span className="tile-label">Requests</span>
           <span className="tile-value">{formatCompact(totals.requests)}</span>
           {view === "providers" && anthropicSynced && <span className="muted small">Anthropic doesn't report request counts</span>}
+          {rows?.some((r) => r.provider === "claude_code") && (
+            <span className="muted small">Claude Code: from this computer's logs, tokens only (subscription, no cost)</span>
+          )}
         </div>
         <div className="tile">
           <span className="tile-label">Input tokens</span>
@@ -249,13 +327,43 @@ export default function Usage() {
             <h2>
               {metric === "cost" ? "Cost" : "Tokens"} by {group === "model" ? "model" : group}
             </h2>
-            {providersPresent.length > 1 && <Legend providers={providersPresent} />}
-            {providersPresent.length === 1 && <span className="muted small">{PROVIDER_LABELS[providersPresent[0]]}</span>}
+            {(providersPresent.length > 1 || metric === "tokens") && <Legend providers={providersPresent} inOut={metric === "tokens"} />}
+            {providersPresent.length === 1 && metric === "cost" && <span className="muted small">{SOURCE_LABELS[providersPresent[0]]}</span>}
           </div>
           {group === "model" ? (
             <HorizontalBars items={bars} format={fmt} />
           ) : (
             <StackedColumns points={stacked} format={fmt} formatTick={fmtTick} />
+          )}
+        </div>
+      )}
+
+      {rows && rows.length > 0 && (
+        <div className="chart-grid">
+          <div className="card stack">
+            <div className="row space-between wrap">
+              <h2>{metric === "cost" ? "Cost" : "Tokens"} by provider</h2>
+              {metric === "tokens" && <Legend providers={[]} inOut />}
+            </div>
+            {metric === "tokens" ? <HorizontalBars items={providerBars} format={fmt} /> : <BarList items={shares} format={fmt} label="Share by provider" />}
+            {shares.length > 1 && (
+              <p className="muted small">
+                {shares.map((s) => `${s.label} ${((s.value / (shares.reduce((n, x) => n + x.value, 0) || 1)) * 100).toFixed(1)}%`).join(" · ")}
+              </p>
+            )}
+          </div>
+          {group !== "model" && cumulative.length > 1 && (
+            <div className="card stack">
+              <h2>Running total{metric === "tokens" ? " (in + out)" : ""}</h2>
+              <LineChart
+                points={cumulative}
+                series={providersPresent.map((p) => ({ key: p, label: SOURCE_LABELS[p], color: PROVIDER_COLOR[p] }))}
+                format={fmt}
+                formatTick={fmtTick}
+                height={220}
+                label="Running total by provider"
+              />
+            </div>
           )}
         </div>
       )}
@@ -279,7 +387,7 @@ export default function Usage() {
               <tr key={`${r.bucket}-${r.provider}`}>
                 <td>{r.bucket}</td>
                 <td>
-                  <span className={`swatch series-${r.provider}`} aria-hidden /> {PROVIDER_LABELS[r.provider] ?? r.provider}
+                  <span className={`swatch series-${r.provider}`} aria-hidden /> {SOURCE_LABELS[r.provider] ?? r.provider}
                 </td>
                 <td className="num">{formatInteger(r.requests)}</td>
                 <td className="num">{formatInteger(r.input_tokens)}</td>
@@ -323,7 +431,7 @@ function Sources({
     setError(null);
     setMessage(null);
     try {
-      const res = await api.syncUsage(range.from, range.to);
+      const res = await track("syncing", "Syncing usage", () => api.syncUsage(range.from, range.to));
       const parts = (["anthropic", "openai"] as const).map((p) => {
         const r = res.results[p];
         if (!r) return null;
@@ -466,5 +574,41 @@ function ManualEntry({ onSaved }: { onSaved: () => void }) {
       <ErrorText message={error} />
       {message && <p className="small">{message}</p>}
     </form>
+  );
+}
+
+/** Which provider and model handle each AI job (shown only here: the rest of the app doesn't name providers). */
+function Routing() {
+  const [routing, setRouting] = useState<AiRouting | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    api.routing().then(setRouting, (e) => setError(errorMessage(e)));
+  }, []);
+
+  const route = (r: AiRoute) => `${PROVIDER_LABELS[r.provider] ?? r.provider} · ${r.model ?? "model not set"}`;
+
+  return (
+    <details className="card">
+      <summary>AI routing</summary>
+      <p className="muted small">Which provider and model each AI job uses; fixed on the server (TRANSLATE_PROVIDER and LIGHT_PROVIDER in server/.env).</p>
+      <ErrorText message={error} />
+      {routing && (
+        <dl className="kv">
+          <dt>Translation</dt>
+          <dd>{route(routing.translate)}</dd>
+          <dt>Transcription</dt>
+          <dd>{route(routing.transcribe)}</dd>
+          <dt>Light tasks</dt>
+          <dd>{route(routing.light)}</dd>
+          <dt>PT charging schedule</dt>
+          <dd>{route(routing.charging)}</dd>
+          <dt>Transcript habits (Chinese)</dt>
+          <dd>{route(routing.habits_zh)}</dd>
+          <dt>Transcript habits (other)</dt>
+          <dd>{route(routing.habits_other)}</dd>
+        </dl>
+      )}
+    </details>
   );
 }

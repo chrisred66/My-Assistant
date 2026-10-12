@@ -50,7 +50,7 @@ export default function Login({ settings, onSignedIn }: Props) {
   return (
     <div className="center-screen">
       <form className="card narrow stack" onSubmit={(e) => void submit(e)}>
-        <h1>Sign in to chrisManager</h1>
+        <h1>Sign in to My Assistant</h1>
 
         <label className="field">
           <span>Server address</span>

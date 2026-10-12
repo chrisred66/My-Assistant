@@ -46,19 +46,23 @@ final class AnthropicProvider implements ChatProvider
                 fallbacks: 'default',
                 betas: ['server-side-fallback-2026-07-01'],
             );
+        // Messages shown in the app don't name the provider (only the Usage page does); details go to the error log.
         } catch (RateLimitException) {
-            throw new HttpException(429, 'Anthropic rate limit reached, try again shortly');
+            throw new HttpException(429, 'The AI service is busy (rate limit); try again shortly');
         } catch (AuthenticationException) {
-            throw new HttpException(502, 'Anthropic rejected the API key (check ANTHROPIC_API_KEY)');
+            error_log('Anthropic rejected the API key (ANTHROPIC_API_KEY)');
+            throw new HttpException(502, 'The AI service rejected the server\'s API key; check the keys in server/.env');
         } catch (APIStatusException $e) {
-            throw new HttpException(502, "Anthropic error ({$e->status}): " . mb_substr($e->getMessage(), 0, 500));
+            error_log("Anthropic error ({$e->status}): " . $e->getMessage());
+            throw new HttpException(502, "The AI service returned an error ({$e->status}); try again");
         } catch (APIConnectionException $e) {
-            throw new HttpException(502, 'Cannot reach Anthropic: ' . $e->getMessage());
+            error_log('Cannot reach Anthropic: ' . $e->getMessage());
+            throw new HttpException(502, 'Can\'t reach the AI service; check the server\'s internet connection');
         }
 
         if ($message->stopReason === 'refusal') {
             $category = $message->stopDetails?->category ?? 'unspecified';
-            throw new HttpException(422, "Claude declined this request (category: {$category})");
+            throw new HttpException(422, "The AI declined this request (category: {$category})");
         }
 
         $text = '';

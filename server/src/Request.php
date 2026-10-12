@@ -45,6 +45,13 @@ final class Request
         return preg_match('/^Bearer\s+(\S+)$/i', $header, $m) ? $m[1] : null;
     }
 
+    /** A request header, e.g. header('X-View-As'); null when absent or empty. */
+    public function header(string $name): ?string
+    {
+        $v = $_SERVER['HTTP_' . strtoupper(str_replace('-', '_', $name))] ?? '';
+        return $v === '' ? null : (string) $v;
+    }
+
     public function userId(): int
     {
         return (int) $this->user['id'];

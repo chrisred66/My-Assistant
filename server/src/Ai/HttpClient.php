@@ -20,6 +20,23 @@ final class HttpClient
         return self::send($url, $apiKey, $fields, [], $timeout);
     }
 
+    /**
+     * Multipart with repeatable field names (e.g. "known_speaker_names[]"), which an array of fields can't express.
+     * $parts: list of [name, value] or [name, content, filename, mime] for a file.
+     */
+    public static function postMultipartParts(string $url, string $apiKey, array $parts, int $timeout = 300): array
+    {
+        $boundary = 'cm' . bin2hex(random_bytes(12));
+        $body = '';
+        foreach ($parts as $p) {
+            $body .= "--{$boundary}\r\nContent-Disposition: form-data; name=\"{$p[0]}\"";
+            $body .= isset($p[2]) ? "; filename=\"{$p[2]}\"\r\nContent-Type: {$p[3]}\r\n\r\n" : "\r\n\r\n";
+            $body .= $p[1] . "\r\n";
+        }
+        $body .= "--{$boundary}--\r\n";
+        return self::send($url, $apiKey, $body, ["Content-Type: multipart/form-data; boundary={$boundary}"], $timeout);
+    }
+
     /** GET with explicit headers (e.g. Anthropic's "x-api-key"); $query values may be lists, sent as repeated keys. */
     public static function getJson(string $url, array $headers, string $query = '', int $timeout = 60): array
     {
@@ -48,13 +65,21 @@ final class HttpClient
         $error  = curl_error($ch);
         curl_close($ch);
 
+        // The app shows these messages, so they don't name the provider; the full detail goes to the error log.
         if ($raw === false) {
-            throw new HttpException(502, "Upstream request failed: {$error}");
+            error_log("Upstream request to {$url} failed: {$error}");
+            throw new HttpException(502, 'Can\'t reach the AI service; check the server\'s internet connection');
         }
         $data = json_decode($raw, true);
         if ($status >= 400 || !is_array($data)) {
             $message = is_array($data) ? ($data['error']['message'] ?? $raw) : $raw;
-            throw new HttpException(502, "Upstream error ({$status}): " . mb_substr((string) $message, 0, 500));
+            error_log("Upstream error from {$url} ({$status}): " . mb_substr((string) $message, 0, 1000));
+            throw new HttpException(502, match (true) {
+                $status === 401, $status === 403 => 'The AI service rejected the server\'s API key; check the keys in server/.env',
+                $status === 402 => 'The AI service account is out of credit',
+                $status === 429 => 'The AI service is busy (rate limit); try again shortly',
+                default => "The AI service returned an error ({$status}); try again",
+            });
         }
         return $data;
     }

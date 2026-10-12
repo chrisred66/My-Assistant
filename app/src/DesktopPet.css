@@ -1,0 +1,275 @@
+/* Desktop pet window: transparent, only the whale (and its bubble) is drawn. */
+
+html.pet-window,
+html.pet-window body,
+html.pet-window #root {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  background: transparent !important;
+  overflow: hidden;
+  user-select: none;
+}
+
+.pet {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: center;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+.pet-body {
+  width: 150px;
+  height: 128px;
+  cursor: grab;
+  touch-action: none;
+}
+.pet-body:active {
+  cursor: grabbing;
+}
+.whale {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  filter: drop-shadow(0 3px 4px rgba(0, 20, 60, 0.35));
+}
+
+/* ---- Bubble ---- */
+.pet-bubble {
+  position: absolute;
+  top: 2px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-width: 150px;
+  max-width: 196px;
+  padding: 7px 10px;
+  border-radius: 12px;
+  background: rgba(14, 20, 32, 0.92);
+  border: 1px solid rgba(120, 170, 255, 0.35);
+  color: #e6edf7;
+  font-size: 11px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+  animation: pet-pop 180ms ease;
+}
+.pet-bubble strong {
+  font-size: 15px;
+}
+.pet-sub {
+  color: #9fb0c8;
+  font-size: 10px;
+}
+.pet-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  width: 100%;
+  font-size: 10.5px;
+}
+.pet-io {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+.pet-io b {
+  font-weight: 700;
+}
+.pet-io .in {
+  color: #4ade80;
+}
+.pet-io .out {
+  color: #f87171;
+  margin-left: 4px;
+}
+.pet-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+.dot-anthropic { background: #e8743f; }
+.dot-openai { background: #e8e7e2; }
+.dot-deepseek { background: #3987e5; }
+.dot-claude_code { background: #f7b47f; }
+.pet-menu {
+  gap: 4px;
+  min-width: 140px;
+}
+.pet-menu button {
+  width: 100%;
+  padding: 4px 8px;
+  border: 1px solid rgba(120, 170, 255, 0.25);
+  border-radius: 7px;
+  background: rgba(56, 189, 248, 0.08);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.pet-menu button:hover {
+  background: rgba(56, 189, 248, 0.22);
+}
+@keyframes pet-pop {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 6px) scale(0.92);
+  }
+}
+
+/* ---- Whale parts ---- */
+.w-belly { fill: #e0edff; }
+.w-groove { fill: none; stroke: #b9d3fb; stroke-width: 1.4; stroke-linecap: round; }
+.w-gloss { fill: #ffffff; opacity: 0.28; }
+.w-fin { fill: #1e4fc9; }
+.w-cheek { fill: #ff8fb1; opacity: 0.55; }
+.w-eye-white { fill: #ffffff; }
+.w-pupil { fill: #0f172a; }
+.w-shine { fill: #ffffff; }
+.w-line { fill: none; stroke: #0f172a; stroke-width: 2.6; stroke-linecap: round; }
+.w-line.thin { stroke-width: 2; }
+.w-mouth-open { fill: #7a1f3d; }
+.w-drool { fill: #9bd2ff; }
+.w-sweat { fill: #9bd2ff; }
+.w-band { fill: none; stroke: #334155; stroke-width: 3.6; stroke-linecap: round; }
+.w-cup { fill: #1f2937; stroke: #475569; stroke-width: 1; }
+.w-cup.back { opacity: 0.7; }
+.w-rice { fill: #ffffff; stroke: #e5e7eb; stroke-width: 0.8; }
+.w-grain { fill: #f1f5f9; stroke: #d1d5db; stroke-width: 0.4; }
+.w-bowl { fill: #dbeafe; stroke: #93c5fd; stroke-width: 0.8; }
+.w-bowl-foot { stroke: #93c5fd; stroke-width: 1.6; stroke-linecap: round; }
+.w-grain-line { stroke: #cbd5e1; stroke-width: 0.9; stroke-linecap: round; }
+.w-bowl-band { stroke: #3b82f6; stroke-width: 1.6; }
+.w-chopstick { stroke: #b45309; stroke-width: 2.2; stroke-linecap: round; }
+.w-spout path { fill: none; stroke: #93c5fd; stroke-width: 2.4; stroke-linecap: round; opacity: 0; }
+.w-spout.on path { animation: w-spout 1.6s ease-out infinite; }
+.w-zzz text { fill: #c7d7f5; font-weight: 700; font-size: 11px; animation: w-float 2.4s ease-in-out infinite; }
+.w-zzz text.b { font-size: 13px; animation-delay: 0.6s; }
+.w-zzz text.c { font-size: 16px; animation-delay: 1.2s; }
+.w-hearts path { fill: #ff5c8a; animation: w-float 1.4s ease-out infinite; }
+.w-hearts .b { animation-delay: 0.35s; }
+.w-hearts .c { animation-delay: 0.7s; }
+.w-thought circle,
+.w-thought ellipse { fill: rgba(255, 255, 255, 0.95); stroke: #cbd5e1; stroke-width: 1; }
+.w-thought-icon { fill: none; stroke: #2563eb; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+/* ---- Motion ---- */
+.w-bob { animation: w-bob 2.8s ease-in-out infinite; }
+.mood-swim .w-bob { animation-duration: 1.4s; }
+.mood-sleepy .w-bob { animation-duration: 5s; }
+.w-tail { transform-origin: 34px 63px; animation: w-tail 1.6s ease-in-out infinite; }
+.mood-swim .w-tail { animation-duration: 0.55s; }
+.mood-sleepy .w-tail { animation-duration: 4s; }
+.w-flap { transform-origin: 72px 82px; animation: w-flap 1.8s ease-in-out infinite; }
+.mood-swim .w-flap { animation-duration: 0.7s; }
+.w-blink { transform-origin: 104px 52px; animation: w-blink 4.2s infinite; }
+.w-chew { transform-origin: 117px 71px; animation: w-chew 0.32s ease-in-out infinite alternate; }
+.w-sticks { transform-origin: 34px -6px; animation: w-sticks 0.64s ease-in-out infinite; }
+.w-grain.flying { animation: w-grain 0.64s ease-in infinite; }
+.mood-happy .w-bob { animation: w-hop 0.5s ease-out infinite alternate; }
+.mood-held .w-bob { animation: w-dangle 0.8s ease-in-out infinite alternate; }
+
+@keyframes w-bob { 50% { transform: translateY(-3px); } }
+@keyframes w-hop { to { transform: translateY(-6px); } }
+@keyframes w-dangle { from { transform: rotate(-4deg); } to { transform: rotate(4deg); } }
+@keyframes w-tail { 50% { transform: rotate(-12deg); } }
+@keyframes w-flap { 50% { transform: rotate(14deg); } }
+@keyframes w-blink { 0%, 94%, 100% { transform: scaleY(1); } 97% { transform: scaleY(0.1); } }
+@keyframes w-chew { from { transform: scaleY(0.35); } to { transform: scaleY(1.1); } }
+@keyframes w-sticks { 0%, 100% { transform: rotate(0deg); } 50% { transform: rotate(-14deg) translate(-3px, 3px); } }
+@keyframes w-grain { from { transform: translate(4px, 2px); opacity: 1; } to { transform: translate(-5px, 0); opacity: 0; } }
+@keyframes w-float { from { transform: translateY(4px); opacity: 0; } 30% { opacity: 1; } to { transform: translateY(-10px); opacity: 0; } }
+@keyframes w-spout { 0% { opacity: 0; transform: translateY(6px); } 30% { opacity: 1; } 100% { opacity: 0; transform: translateY(-4px); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .w-bob,
+  .w-tail,
+  .w-flap,
+  .w-sticks,
+  .w-grain.flying,
+  .w-zzz text,
+  .w-hearts path,
+  .w-spout.on path {
+    animation-duration: 0s !important;
+    animation-iteration-count: 1 !important;
+  }
+}
+
+
+/* ---- Your own images ---- */
+.pet-body.image {
+  width: 184px;
+  height: 200px; /* room for a full-body character */
+}
+.img-pet {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+.img-pet img {
+  position: absolute;
+  inset: 8px 8px 0;
+  width: calc(100% - 16px);
+  height: calc(100% - 8px);
+  object-fit: contain;
+  object-position: center bottom;
+  filter: drop-shadow(0 3px 4px rgba(0, 20, 60, 0.35));
+  pointer-events: none;
+}
+.img-pet-overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+.img-pet { animation: w-bob 2.8s ease-in-out infinite; transform-origin: 50% 100%; }
+.img-pet.mood-swim { animation: img-swim 1.2s ease-in-out infinite; }
+.img-pet.mood-happy { animation: img-hop 0.45s ease-out infinite alternate; }
+.img-pet.mood-held { animation: w-dangle 0.8s ease-in-out infinite alternate; transform-origin: 50% 0; }
+.img-pet.mood-eating { animation: img-chew 0.5s ease-in-out infinite alternate; }
+.img-pet.mood-sleepy { animation: img-breathe 4.5s ease-in-out infinite; }
+.img-pet.mood-sleepy.borrowed img { filter: drop-shadow(0 3px 4px rgba(0, 20, 60, 0.35)) brightness(0.85); }
+.img-pet.mood-hungry { animation: img-sway 2.2s ease-in-out infinite; }
+@keyframes img-swim { 0%, 100% { transform: rotate(-3deg) translateY(0); } 50% { transform: rotate(3deg) translateY(-3px); } }
+@keyframes img-hop { to { transform: translateY(-8px) scale(1.03); } }
+@keyframes img-chew { from { transform: scale(1, 1); } to { transform: scale(1.04, 0.95); } }
+@keyframes img-breathe { 50% { transform: scale(1.02, 0.98); } }
+@keyframes img-sway { 50% { transform: rotate(-4deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .img-pet { animation-duration: 0s !important; animation-iteration-count: 1 !important; }
+}
+
+
+/* ---- Animation pack (640x360 clips, the character in the middle) ---- */
+.pet-body.pack {
+  width: 240px;
+  height: 232px;
+  overflow: hidden;
+}
+.pack-pet {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+.pack-pet video {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  height: 250px; /* 640x360 -> 444x250: the character about 185px tall */
+  width: auto;
+  transform: translateX(-50%);
+  opacity: 0;
+  pointer-events: none;
+}
+.pack-pet video.on {
+  opacity: 1;
+}
+.pet-credit {
+  max-width: 180px;
+  text-align: center;
+  word-break: break-all;
+}

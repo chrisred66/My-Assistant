@@ -1,24 +1,31 @@
 import { useCallback, useEffect, useState } from "react";
 import "./App.css";
-import { api, ApiError, canPt, configureApi, type User } from "./lib/api";
+import "@fontsource-variable/space-grotesk";
+import "./theme.css";
+import ThemeSwitch from "./components/ThemeSwitch";
+import BackToTop from "./components/BackToTop";
+import { RolePicker, RoleSwitcher } from "./components/RolePicker";
+import { AccountSwitcher } from "./components/AccountSwitcher";
+import { api, ApiError, configureApi, hasPt, type User } from "./lib/api";
+import { ballEnabled, hideBall, showBall } from "./lib/ball";
+import { hidePet, petEnabled, showPet } from "./lib/pet";
 import { errorMessage } from "./lib/format";
 import { clearToken, getToken, loadSettings, type Settings } from "./lib/settings";
 import Login from "./pages/Login";
+import Language, { type LanguageTab } from "./pages/Language";
 import PtManagement from "./pages/pt/PtManagement";
-import Recordings from "./pages/Recordings";
 import SettingsPage from "./pages/Settings";
-import Transcripts from "./pages/Transcripts";
-import Translate from "./pages/Translate";
 import Usage from "./pages/Usage";
+import { serveActivityRequests } from "./lib/activity";
 
-type Page = "translate" | "recordings" | "transcripts" | "usage" | "pt" | "settings";
+const APP_NAME = "My Assistant";
+
+type Page = "pt" | "language" | "usage" | "settings";
 
 const NAV: { id: Page; label: string; visible: (u: User) => boolean }[] = [
-  { id: "translate", label: "Translate", visible: (u) => u.role === "owner" },
-  { id: "recordings", label: "Recordings", visible: (u) => u.role === "owner" },
-  { id: "transcripts", label: "Transcripts", visible: (u) => u.role === "owner" },
-  { id: "usage", label: "Usage", visible: (u) => u.role === "owner" },
-  { id: "pt", label: "PT Management", visible: (u) => canPt(u) },
+  { id: "pt", label: "PT Management", visible: (u) => hasPt(u) },
+  { id: "language", label: "General Tool", visible: (u) => u.access.general },
+  { id: "usage", label: "Usage", visible: (u) => u.access.usage },
   { id: "settings", label: "Settings", visible: () => true },
 ];
 
@@ -31,9 +38,12 @@ type Session =
   | { state: "offline"; settings: Settings; message: string }
   | { state: "signedIn"; settings: Settings; user: User };
 
+serveActivityRequests(); // the desktop ball asks what's going on when it opens
+
 export default function App() {
   const [session, setSession] = useState<Session>({ state: "loading" });
-  const [page, setPage] = useState<Page>("translate");
+  const [page, setPage] = useState<Page>("pt");
+  const [languageTab, setLanguageTab] = useState<LanguageTab>("recordings");
 
   const signOutLocally = useCallback(async () => {
     await clearToken();
@@ -67,7 +77,20 @@ export default function App() {
     void restore();
   }, [restore]);
 
+  // The desktop usage ball shows usage, which only the Super Admin can see: shown while they're signed in (in any role,
+  // if switched on in Settings), hidden otherwise.
+  const ballOwner = session.state === "signedIn" && (session.user.account_role === "super_admin" || session.user.viewed_by !== null);
+  useEffect(() => {
+    if (ballOwner) void ballEnabled().then((on) => (on ? showBall() : hideBall()));
+    else void hideBall();
+    // The desktop pet, likewise Super Admin only.
+    if (ballOwner) void petEnabled().then((on) => (on ? showPet() : hidePet()));
+    else void hidePet();
+  }, [ballOwner]);
+
   async function logout() {
+    // Viewing as another account: "sign out" goes back to your own account instead.
+    if (session.state === "signedIn" && session.user.viewed_by) return switchAccount(await api.viewAs(null));
     try {
       await api.logout();
     } catch {
@@ -76,12 +99,18 @@ export default function App() {
     await signOutLocally();
   }
 
+  /** After viewing as another account (or going back): its first page unless it has the current one. */
+  function switchAccount(user: User) {
+    setPage((p) => (NAV.find((n) => n.id === p)?.visible(user) ? p : homePage(user)));
+    setSession((s) => (s.state === "signedIn" ? { ...s, user } : s));
+  }
+
   if (session.state === "loading") {
     return <div className="center-screen muted">Loading…</div>;
   }
 
   if (session.state === "signedOut") {
-        return (
+    return (
       <Login
         settings={session.settings}
         onSignedIn={(settings, user) => {
@@ -110,10 +139,31 @@ export default function App() {
     );
   }
 
+  // Several roles and none chosen yet: pick one before the main window.
+  if (session.user.roles.length > 1 && !session.user.active_role) {
+    return (
+      <RolePicker
+        user={session.user}
+        onChosen={(user) => {
+          setPage(homePage(user));
+          setSession({ ...session, user });
+        }}
+        onSignOut={() => void logout()}
+        signOutLabel={session.user.viewed_by ? "Back to my account" : undefined}
+      />
+    );
+  }
+
+  /** After switching role: stay on the page if the new role has it, otherwise go to its first page. */
+  const switchRole = (user: User) => {
+    setPage((p) => (NAV.find((n) => n.id === p)?.visible(user) ? p : homePage(user)));
+    setSession({ ...session, user });
+  };
+
   return (
     <div className="shell">
       <nav className="sidebar" aria-label="Main">
-        <div className="brand">chrisManager</div>
+        <div className="brand">{APP_NAME}</div>
         {NAV.filter((item) => item.visible(session.user)).map((item) => (
           <button
             key={item.id}
@@ -124,17 +174,48 @@ export default function App() {
             {item.label}
           </button>
         ))}
-        <div className="sidebar-footer muted" title={session.settings.serverUrl}>
-          {session.user.display_name}
+        <div className="sidebar-footer">
+          {session.user.viewed_by && (
+            <div className="viewing-as" role="status">
+              <span>
+                Viewing as <strong>{session.user.display_name}</strong>
+              </span>
+              <button className="small-btn" onClick={() => void api.viewAs(null).then(switchAccount)}>
+                Back to my account
+              </button>
+            </div>
+          )}
+          <RoleSwitcher user={session.user} onSwitched={switchRole} />
+          <ThemeSwitch />
+          <div className="sidebar-user-row">
+            <span className="sidebar-user" title={session.settings.serverUrl}>
+              {session.user.display_name}
+            </span>
+            {(session.user.account_role === "super_admin" || session.user.viewed_by) && (
+              <AccountSwitcher user={session.user} onSwitched={switchAccount} />
+            )}
+          </div>
         </div>
       </nav>
-      <main className="content">
-        {page === "translate" && <Translate />}
-        {page === "recordings" && <Recordings />}
-        {page === "transcripts" && <Transcripts />}
+      {/* Keyed by account and role, so each page starts fresh with that account's data and permissions. */}
+      <main className="content" key={`${session.user.id}:${session.user.active_role ?? "all"}`}>
+        {page === "language" && (
+          <Language
+            tab={languageTab}
+            onTab={setLanguageTab}
+            freeLimit={session.user.access.translations?.limit ?? null}
+            canTranscribe={session.user.access.transcribe}
+          />
+        )}
         {page === "usage" && <Usage />}
         {page === "pt" && <PtManagement user={session.user} />}
-        {page === "settings" && <SettingsPage settings={session.settings} user={session.user} onLogout={() => void logout()} />}
+        {page === "settings" && <SettingsPage
+            settings={session.settings}
+            user={session.user}
+            onLogout={() => void logout()}
+            onUserChange={(user) => setSession({ ...session, user })}
+          />}
+        <BackToTop />
       </main>
     </div>
   );

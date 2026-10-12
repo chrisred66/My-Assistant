@@ -40,6 +40,11 @@ final class Env
     {
         $value = self::get($key);
         if ($value === null) {
+            // AI keys are named after their provider; the app doesn't show provider names (only the Usage page does).
+            if (preg_match('/^(ANTHROPIC|OPENAI|DEEPSEEK)_/', $key)) {
+                error_log("Server is missing config value {$key}");
+                throw new HttpException(500, 'The server is missing an AI API key (see server/.env)');
+            }
             throw new HttpException(500, "Server is missing config value {$key}");
         }
         return $value;

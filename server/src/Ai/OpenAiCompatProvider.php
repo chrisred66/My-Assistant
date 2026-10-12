@@ -31,21 +31,30 @@ final class OpenAiCompatProvider implements ChatProvider
     {
         $model = Env::get(self::ENDPOINTS[$this->provider][2]);
         if ($model === null) {
-            throw new HttpException(500, 'Set ' . self::ENDPOINTS[$this->provider][2] . ' in .env');
+            error_log('Set ' . self::ENDPOINTS[$this->provider][2] . ' in server/.env');
+            throw new HttpException(500, 'An AI model isn\'t configured on the server (see server/.env)');
         }
         return $model;
     }
 
-    public function complete(string $system, string $user, string $model, ?string $effort = null): ChatResult
+    /** $json: ask for a JSON object reply (response_format json_object; the prompt must mention JSON). */
+    public function complete(string $system, string $user, string $model, ?string $effort = null, bool $json = false, ?int $maxTokens = null): ChatResult
     {
         [$url, $keyVar] = self::ENDPOINTS[$this->provider];
-        $data = HttpClient::postJson($url, Env::require($keyVar), [
+        $body = [
             'model'    => $model,
             'messages' => [
                 ['role' => 'system', 'content' => $system],
                 ['role' => 'user', 'content' => $user],
             ],
-        ]);
+        ];
+        if ($json) {
+            $body['response_format'] = ['type' => 'json_object'];
+        }
+        if ($maxTokens !== null) {
+            $body['max_tokens'] = $maxTokens;
+        }
+        $data = HttpClient::postJson($url, Env::require($keyVar), $body, 180);
 
         $usage = $data['usage'] ?? [];
         // OpenAI reports cached input under prompt_tokens_details; DeepSeek uses prompt_cache_hit_tokens.

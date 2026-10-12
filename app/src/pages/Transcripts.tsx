@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { CopyButton, ErrorText } from "../components/common";
+import { LearnedHabits, TranscriptEditor } from "../components/TranscriptEdit";
 import { api, type Transcript } from "../lib/api";
 import { errorMessage, formatDateTime, languageName } from "../lib/format";
+import { track } from "../lib/activity";
 
-export default function Transcripts() {
+/** `canTranscribe` false (free plan): no learning from edits (there are no transcripts of recordings to apply it to). */
+export default function Transcripts({ canTranscribe = true }: { canTranscribe?: boolean }) {
   const [items, setItems] = useState<Transcript[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
@@ -31,10 +34,7 @@ export default function Transcripts() {
 
   return (
     <section className="page">
-      <header className="page-header">
-        <h1>Transcripts</h1>
-        <p className="muted">Your latest 200 transcripts, from recordings and typed text.</p>
-      </header>
+      {canTranscribe && <LearnedHabits />}
 
       <div className="row">
         <input
@@ -56,23 +56,26 @@ export default function Transcripts() {
 
       <div className="stack">
         {filtered?.map((t) => (
-          <TranscriptCard key={t.id} transcript={t} onTranslated={() => void refresh()} />
+          <TranscriptCard key={t.id} transcript={t} onChanged={() => void refresh()} />
         ))}
       </div>
     </section>
   );
 }
 
-function TranscriptCard({ transcript: t, onTranslated }: { transcript: Transcript; onTranslated: () => void }) {
+/** One transcript or translation: copy, translate, edit, delete. Also used for the Translate page's history. */
+export function TranscriptCard({ transcript: t, onChanged }: { transcript: Transcript; onChanged: () => void }) {
   const [busy, setBusy] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   async function translate() {
     setBusy(true);
     setError(null);
     try {
-      await api.translateTranscript(t.id);
-      onTranslated();
+      await track("translating", "Translating", () => api.translateTranscript(t.id));
+      onChanged();
     } catch (e) {
       setError(errorMessage(e));
     } finally {
@@ -80,44 +83,84 @@ function TranscriptCard({ transcript: t, onTranslated }: { transcript: Transcrip
     }
   }
 
+  async function remove() {
+    const what = t.recording_id ? "this transcript (the recording's audio stays)" : "this translation";
+    if (!window.confirm(`Delete ${what}?`)) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await api.deleteTranscript(t.id);
+      onChanged();
+    } catch (e) {
+      setError(errorMessage(e));
+      setBusy(false);
+    }
+  }
+
   const source = t.recording_id ? `Recording #${t.recording_id}` : "Typed text";
-  const via = t.translate_provider ? ` · ${t.translate_provider}/${t.translate_model}` : "";
 
   return (
     <article className="card transcript">
-      <span className="muted small">
-        {formatDateTime(t.created_at)} · {source}
-        {via}
-      </span>
-      <div className="two-col">
-        <div className="stack-tight">
-          <div className="row space-between">
-            <h3>Original · {languageName(t.language)}</h3>
-            <CopyButton text={t.source_text} />
+      <div className="row space-between">
+        <span className="muted small">
+          {formatDateTime(t.created_at)} · {source}
+        </span>
+        {!editing && (
+          <div className="row">
+            <button className="small-btn" onClick={() => (setEditing(true), setNote(null))} disabled={busy}>
+              Edit
+            </button>
+            <button className="small-btn danger" onClick={() => void remove()} disabled={busy}>
+              Delete
+            </button>
           </div>
-          <p className="prose" dir="auto">
-            {t.source_text}
-          </p>
-        </div>
-        <div className="stack-tight">
-          <div className="row space-between">
-            <h3>English</h3>
+        )}
+      </div>
+      {editing ? (
+        <TranscriptEditor
+          id={t.id}
+          source={t.source_text}
+          english={t.translated_text}
+          language={t.language}
+          onCancel={() => setEditing(false)}
+          onSaved={(learning) => {
+            setEditing(false);
+            setNote(learning ? "Saved. Your corrections will be applied to future transcripts." : "Saved.");
+            onChanged();
+          }}
+        />
+      ) : (
+        <div className="two-col">
+          <div className="stack-tight">
+            <div className="row space-between">
+              <h3>Original · {languageName(t.language)}</h3>
+              <CopyButton text={t.source_text} />
+            </div>
+            <p className="prose" dir="auto">
+              {t.source_text}
+            </p>
+          </div>
+          <div className="stack-tight">
+            <div className="row space-between">
+              <h3>English</h3>
+              {t.translated_text ? (
+                <CopyButton text={t.translated_text} />
+              ) : t.language === "en" ? null : (
+                <button className="small-btn" onClick={() => void translate()} disabled={busy}>
+                  {busy ? "Translating…" : "Translate"}
+                </button>
+              )}
+            </div>
             {t.translated_text ? (
-              <CopyButton text={t.translated_text} />
-            ) : t.language === "en" ? null : (
-              <button className="small-btn" onClick={() => void translate()} disabled={busy}>
-                {busy ? "Translating…" : "Translate"}
-              </button>
+              <p className="prose">{t.translated_text}</p>
+            ) : (
+              <p className="muted small">{t.language === "en" ? "Already English." : "Not translated yet."}</p>
             )}
           </div>
-          {t.translated_text ? (
-            <p className="prose">{t.translated_text}</p>
-          ) : (
-            <p className="muted small">{t.language === "en" ? "Already English." : "Not translated yet."}</p>
-          )}
-          <ErrorText message={error} />
         </div>
-      </div>
+      )}
+      {note && <p className="muted small">{note}</p>}
+      <ErrorText message={error} />
     </article>
   );
 }
