@@ -11,6 +11,16 @@ Unreleased to the version and date, and bump the app version in
 ## [Unreleased]
 
 ### Added
+- **Pet animation rules** (`app/src/lib/petRules.ts`, from the "Pet animation triggers" CSV): idle clips only while
+  you're away (no input for 60 s; some after 5 or 10 min), "exiting idle" clips when you come back (in the morning
+  打瞌睡被惊醒 → 晨间刷牙), a typing chain, an eating chain while tokens are used and 偷吃零食被抓住 → tail slap when it
+  stops, work clips per app job, git clips (committing / committed / reverted), seasonal and holiday weights, and sleep
+  only at night while you're idle. New native signals (`signals.rs`): keyboard/mouse idle time, typing, and git
+  activity in watched repositories (`pet_watch_repos`).
+- **The pet plays with the ball.** While a web browser is in front (the native watcher now also reports the foreground
+  app, `foreground-app` event / `foreground_app` command) and no tokens have been used for 3 minutes, the pet swims
+  behind the usage ball and pushes it; the ball rolls (spins with the distance, then settles upright). Pushes take the
+  path furthest from the cursor, never start within ~260 px of it, and brake if the cursor comes near.
 - **Animation-pack pet** (`components/PackPet.tsx`). The pet can play an installed pack of transparent WebM clips
   (`pet-pack/pack.json` + clips in the app data folder, served over Tauri's asset protocol, scoped to that folder):
   idle loop with a weighted random routine (festival clips only in their months), run/drag/sleep/work loops, and
@@ -233,6 +243,11 @@ Unreleased to the version and date, and bump the app version in
   the bottom half keeps the rotating usage. The main window reports activities over Tauri events (`lib/activity.ts`).
 
 ### Changed
+- Pages use the full window width (the 1100 px cap is gone), so cards and charts widen with the window.
+- Transcripts read line by line: each original line with its English underneath (`components/LinePairs.tsx`), in
+  Transcripts, Translate history, recordings and the live view. New whole-recording transcripts are saved one sentence
+  per line and translated line for line (`Language::sentenceLines`, translator prompts keep the line structure);
+  older ones pair by sentence, or show as two blocks until "Translate again".
 - The Super Admin account manages users (create, change groups) whatever role it is acting in.
 - The user category "General Tool" is now "General User" (role labels "General User · Free / Paid", the role picker,
   Settings → Users). The General Tool page keeps its name.

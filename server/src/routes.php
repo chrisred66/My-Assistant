@@ -5,6 +5,7 @@ declare(strict_types=1);
 /** @var ChrisManager\Router $router */
 
 use ChrisManager\Ai\Habits;
+use ChrisManager\Ai\Language;
 use ChrisManager\Ai\Routing;
 use ChrisManager\Ai\Transcriber;
 use ChrisManager\Ai\Translator;
@@ -260,6 +261,11 @@ $translateTranscript = function (Request $r, int $transcriptId, string $text, ?s
     $rec = Db::one('SELECT recording_id FROM transcripts WHERE id = ?', [$transcriptId]);
     $ref = $rec !== null && $rec['recording_id'] !== null ? "recording:{$rec['recording_id']}" : "translate:{$transcriptId}";
     Quota::check($r->user, $ref);
+    $lined = Language::sentenceLines($text);
+    if ($lined !== trim($text) && Db::one('SELECT 1 FROM transcript_segments WHERE transcript_id = ? LIMIT 1', [$transcriptId]) === null) {
+        Db::run('UPDATE transcripts SET source_text = ? WHERE id = ?', [$lined, $transcriptId]);
+        $text = $lined;
+    }
     $t = Translator::toEnglish($r->userId(), $text, $language, $r->input('model') ?: null);
     if ($t['model'] !== null) {
         Quota::consume($r->user, $ref); // only when something was actually translated (English is skipped)
@@ -287,6 +293,7 @@ $transcribeRecording = function (Request $r, array $rec) use ($recordingFile): a
     set_time_limit(300);
     $heard = Transcriber::transcribe($r->userId(), $recordingFile($rec), $rec['mime_type']);
     $heard['text'] = Habits::apply($r->userId(), $heard['text'], $heard['language']); // the user's learned corrections
+    $heard['text'] = Language::sentenceLines($heard['text']); // one sentence per line, translated line by line
     Db::run('UPDATE recordings SET duration_sec = COALESCE(?, duration_sec) WHERE id = ?', [$heard['duration'], $rec['id']]);
 
     $existing = Db::one('SELECT id FROM transcripts WHERE recording_id = ? ORDER BY id DESC LIMIT 1', [$rec['id']]);

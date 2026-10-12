@@ -87,6 +87,19 @@ export default function UsageBall() {
   const [index, setIndex] = useState(0);
   const [problem, setProblem] = useState<string | null>(null);
   const [activities, setActivities] = useState<Activity[]>([]);
+  // Rolling: the desktop pet pushes the ball around and sends its angle; "settle" eases it back upright.
+  const [roll, setRoll] = useState<{ angle: number; settling: boolean }>({ angle: 0, settling: false });
+
+  useEffect(() => {
+    const unlisten = listen<{ angle?: number; settle?: boolean }>("ball-roll", (e) => {
+      if (e.payload.settle) setRoll((r) => ({ angle: Math.round(r.angle / 360) * 360, settling: true }));
+      else if (typeof e.payload.angle === "number") setRoll({ angle: e.payload.angle, settling: false });
+    });
+    return () => {
+      void unlisten.then((f) => f()).catch(() => {});
+    };
+  }, []);
+  const rollStyle = roll.angle ? { transform: `rotate(${roll.angle}deg)`, transition: roll.settling ? "transform 700ms ease-out, border-color 400ms ease" : "border-color 400ms ease" } : undefined;
   const [now, setNow] = useState(Date.now());
 
   // What the main window is doing; ask once on opening, then follow its broadcasts.
@@ -170,7 +183,7 @@ export default function UsageBall() {
         </div>
       )}
       {current && !problem ? (
-        <div className="ball ball-split" data-tauri-drag-region>
+        <div className="ball ball-split" data-tauri-drag-region style={rollStyle}>
           <div className={`ball-activity act-${current.kind}`} key={current.id} data-tauri-drag-region>
             <span className="ball-icon" data-tauri-drag-region>
               {ICONS[current.kind]}
@@ -189,7 +202,7 @@ export default function UsageBall() {
           </div>
         </div>
       ) : (
-        <div className="ball" data-tauri-drag-region>
+        <div className="ball" data-tauri-drag-region style={rollStyle}>
           {problem ? (
             <span className="ball-problem" data-tauri-drag-region>
               {problem}

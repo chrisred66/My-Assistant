@@ -851,3 +851,53 @@ label.check input {
   opacity: 0;
   cursor: pointer;
 }
+
+
+/* ---- Transcripts line by line: original, English underneath ---- */
+.line-pairs {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.line-pair {
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--grid);
+}
+.line-pair:last-child {
+  border-bottom: none;
+}
+.line-pair:nth-child(even) {
+  background: var(--wash);
+}
+.line-src,
+.line-en {
+  margin: 0;
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+.line-src {
+  font-size: 0.98rem;
+}
+.line-en {
+  margin-top: 2px;
+  color: var(--text-2);
+  font-size: 0.92rem;
+}
+.line-pairs.blocks .line-en {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--border-strong);
+}
+/* Live recording: each chunk's original with its English underneath. */
+.live-row {
+  grid-template-columns: 1fr;
+  gap: 2px;
+}
+.live-row > div:last-child .prose {
+  color: var(--text-2);
+}
+.live-head {
+  display: none;
+}

@@ -26,6 +26,20 @@ final class Language
         return self::NAMES[$v] ?? mb_substr($v, 0, 20);
     }
 
+    /**
+     * One sentence per line, so a transcript and its translation can be shown line by line. Text that already has
+     * line breaks is left as it is.
+     */
+    public static function sentenceLines(string $text): string
+    {
+        $text = trim($text);
+        if ($text === '' || str_contains($text, "\n")) {
+            return $text;
+        }
+        $parts = preg_split('/(?<=[.!?…])\s+|(?<=[。！？؟])\s*/u', $text, -1, PREG_SPLIT_NO_EMPTY) ?: [$text];
+        return implode("\n", array_map('trim', $parts));
+    }
+
     public static function isEnglish(?string $code): bool
     {
         return $code === 'en';

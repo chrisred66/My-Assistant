@@ -201,7 +201,7 @@ p {
   display: flex;
   flex-direction: column;
   gap: 18px;
-  max-width: 1100px;
+  /* fills the window: no max-width, so cards and charts widen with it */
 }
 
 .page-header {

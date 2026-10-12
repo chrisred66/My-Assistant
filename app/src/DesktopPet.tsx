@@ -5,12 +5,16 @@
 // - Sleepy late at night, hungry around meal times; happy when clicked or petted (stroke the mouse back and forth).
 // - Click: today's tokens in a bubble. Double-click: open My Assistant. Drag: move it (it rests a while). Right-click:
 //   stay here / swim around, or put it away.
+// - While you browse the web and no tokens have been used for a few minutes, it plays with the usage ball: swims
+//   behind it and pushes it, and the ball rolls. Pushes go away from the cursor, and stop if the cursor comes near.
 import { useCallback, useEffect, useRef, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { emit, listen } from "@tauri-apps/api/event";
-import { currentMonitor, getCurrentWindow, PhysicalPosition } from "@tauri-apps/api/window";
+import { currentMonitor, cursorPosition, getCurrentWindow, PhysicalPosition, Window } from "@tauri-apps/api/window";
 import { Whale, type Mood, type Prop } from "./components/Whale";
 import { ImagePet } from "./components/ImagePet";
-import { PackPet, type PackState } from "./components/PackPet";
+import { PackPet, type PackEvents, type PackState } from "./components/PackPet";
+import { DEFAULT_REPOS, EXIT_IDLE_AFTER_MS, IDLE_MS, TOKEN_ACTIVE_MS } from "./lib/petRules";
 import type { Activity, ActivityKind } from "./lib/activity";
 import { api, configureApi, PROVIDERS, SOURCE_LABELS, USAGE_SOURCES, type UsageSource } from "./lib/api";
 import { focusMain } from "./lib/ball";
@@ -22,7 +26,12 @@ import "./DesktopPet.css";
 
 const POLL_MS = 30_000;
 const EAT_MS = 4_500;
+const EAT_EVERY_MS = 3 * 60_000; // token use seen by the 30 s check eats at most this often (AI jobs finishing always do)
 const SPEED = 70; // logical px per second while swimming
+const QUIET_MS = 3 * 60_000; // no tokens used for this long (while browsing): time to play with the ball
+const AVOID = 260; // logical px: pushes keep the ball this far from the cursor
+// The usage ball window (128 x 138, logical): its disc's centre and radius.
+const BALL = { cx: 64, cy: 74, r: 58 };
 
 const PROPS: Record<ActivityKind, Prop> = {
   recording: "headphones",
@@ -55,9 +64,11 @@ export default function DesktopPet() {
   const [imageFaces, setImageFaces] = useState<"left" | "right">("right");
   const [pack, setPack] = useState<LoadedPack | null>(null);
   const [look, setLook] = useState<PetLook>("auto");
-  // Event counters for the animation pack (each bump plays that event's clip once).
-  const [events, setEvents] = useState({ click: 0, pet: 0, eat: 0, tier: 0 });
-  const bump = (k: "click" | "pet" | "eat" | "tier") => setEvents((e) => ({ ...e, [k]: e[k] + 1 }));
+  // Event counters for the animation pack (each bump plays that event's clip once; see lib/petRules.ts).
+  const [events, setEvents] = useState<PackEvents>({ click: 0, pet: 0, tier: 0, exitIdle: 0, tokensDone: 0, committing: 0, committed: 0, reverted: 0 });
+  const bump = (k: keyof PackEvents) => setEvents((e) => ({ ...e, [k]: e[k] + 1 }));
+  // You: milliseconds since your last keyboard/mouse input, and whether you're typing (native signals).
+  const [user, setUser] = useState({ idleMs: 0, typing: false });
 
   const win = getCurrentWindow();
   const lastTotal = useRef<number | null>(null);
@@ -65,10 +76,42 @@ export default function DesktopPet() {
   const hover = useRef(false);
   const pet = useRef<{ x: number; dir: number; flips: number; t: number }>({ x: 0, dir: 0, flips: 0, t: 0 });
   const press = useRef<{ x: number; y: number } | null>(null);
+  const lastTokenAt = useRef(0);
+  const lastMealAt = useRef(0);
+  const acting = useRef(false); // the animation pack is playing a one-off clip: don't walk off mid-clip
+  const shownRef = useRef<"pack" | "images" | "whale">("whale");
+  const playOk = useRef(false);
+  const [browsing, setBrowsing] = useState(false);
 
   const eat = useCallback(() => {
+    lastTokenAt.current = Date.now();
+    lastMealAt.current = Date.now();
     setEatingUntil(Date.now() + EAT_MS);
-    setEvents((e) => ({ ...e, eat: e.eat + 1 }));
+  }, []);
+
+  // Your keyboard/mouse activity; coming back after a while away is an event.
+  useEffect(() => {
+    let prevIdle = 0;
+    const unlisten = listen<{ idle_ms: number; typing: boolean }>("user-activity", (e) => {
+      const { idle_ms, typing } = e.payload;
+      if (prevIdle >= EXIT_IDLE_AFTER_MS && idle_ms < 3000) setEvents((ev) => ({ ...ev, exitIdle: ev.exitIdle + 1 }));
+      prevIdle = idle_ms;
+      setUser({ idleMs: idle_ms, typing });
+    });
+    return () => {
+      void unlisten.then((f) => f()).catch(() => {});
+    };
+  }, []);
+
+  // Git commits and reverts in the watched repositories.
+  useEffect(() => {
+    void invoke("pet_watch_repos", { repos: DEFAULT_REPOS }).catch(() => {});
+    const unlisten = listen<{ action: "committing" | "committed" | "reverted" }>("git-activity", (e) =>
+      setEvents((ev) => ({ ...ev, [e.payload.action]: ev[e.payload.action] + 1 })),
+    );
+    return () => {
+      void unlisten.then((f) => f()).catch(() => {});
+    };
   }, []);
 
   // Clock for moods and timers.
@@ -79,6 +122,15 @@ export default function DesktopPet() {
 
   useEffect(() => {
     void petStays().then(setStay);
+  }, []);
+
+  // Is the app in front a web browser? (Reported by the native full-screen watcher.)
+  useEffect(() => {
+    void invoke<{ browser: boolean }>("foreground_app").then((f) => setBrowsing(f.browser), () => {});
+    const unlisten = listen<{ browser: boolean }>("foreground-app", (e) => setBrowsing(e.payload.browser));
+    return () => {
+      void unlisten.then((f) => f()).catch(() => {});
+    };
   }, []);
 
   // Your own images, if set (Settings → Desktop pet); reloaded when they change there.
@@ -99,6 +151,7 @@ export default function DesktopPet() {
   // Which look: chosen in Settings, or the best available.
   const shown: "pack" | "images" | "whale" =
     look === "pack" && pack ? "pack" : look === "images" && hasSkin ? "images" : look === "whale" ? "whale" : pack ? "pack" : hasSkin ? "images" : "whale";
+  shownRef.current = shown;
 
   // What the main window is doing; eat when an AI job finishes.
   useEffect(() => {
@@ -130,7 +183,11 @@ export default function DesktopPet() {
       }
       if (cc) t.claude_code = claudeCodeTotals(cc).today;
       const total = Object.values(t).reduce((n, v) => n + (v?.input ?? 0) + (v?.output ?? 0), 0);
-      if (lastTotal.current !== null && total > lastTotal.current) eat();
+      if (lastTotal.current !== null && total > lastTotal.current) {
+        lastTokenAt.current = Date.now();
+        // The whale and image looks eat at most every few minutes; the animation pack eats while tokens flow.
+        if (Date.now() - lastMealAt.current > EAT_EVERY_MS) eat();
+      }
       lastTotal.current = total;
       setToday(t);
     } catch {
@@ -171,8 +228,34 @@ export default function DesktopPet() {
   const fullness = Math.min(1, Math.log10(1 + total / 20_000) / 2.5); // ~1m tokens: about 70% rounder-ness
 
   // The animation pack's state loop, and the token tier for its "balance" clips.
-  const packState: PackState = held ? "held" : moving ? "moving" : current ? "busy" : night ? "sleepy" : mealTime && !justAte ? "hungry" : "idle";
+  const userIdle = user.idleMs >= IDLE_MS;
+  const tokensActive = now - lastTokenAt.current < TOKEN_ACTIVE_MS;
+  const packState: PackState = held
+    ? "held"
+    : moving
+      ? "moving"
+      : current
+        ? "busy"
+        : tokensActive
+          ? "tokens"
+          : user.typing
+            ? "typing"
+            : night && userIdle
+              ? "sleepy"
+              : userIdle
+                ? "idle"
+                : "active";
+  // Token use stopping is an event ("finishing token usage").
+  const wasTokens = useRef(false);
+  useEffect(() => {
+    if (wasTokens.current && !tokensActive) bump("tokensDone");
+    wasTokens.current = tokensActive;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tokensActive]);
   const tierIndex = [100_000, 500_000, 1_000_000, 3_000_000, 10_000_000].filter((t) => total >= t).length;
+
+  // Play with the ball: browsing, nothing running, no tokens for a while.
+  playOk.current = browsing && !current && now - lastTokenAt.current > QUIET_MS && mood !== "sleepy";
 
   // ---- roaming ---------------------------------------------------------------------------------------------------
   const canRoam = !stay && !held && !eating && mood !== "sleepy" && bubble === null;
@@ -230,11 +313,124 @@ export default function DesktopPet() {
           step();
         });
 
+      const dist2 = (ax: number, ay: number, bx: number, by: number) => Math.hypot(ax - bx, ay - by);
+      /** Distance from point p to the segment a-b. */
+      const toSegment = (px: number, py: number, ax: number, ay: number, bx: number, by: number) => {
+        const vx = bx - ax;
+        const vy = by - ay;
+        const t = Math.max(0, Math.min(1, ((px - ax) * vx + (py - ay) * vy) / (vx * vx + vy * vy || 1)));
+        return dist2(px, py, ax + t * vx, ay + t * vy);
+      };
+
+      /** One round of play: swim behind the ball, push it away from the cursor, let it roll to a stop. */
+      const playWithBall = async () => {
+        const ball = await Window.getByLabel("ball").catch(() => null);
+        if (!ball || !(await ball.isVisible().catch(() => false))) return;
+        const bpos = await ball.outerPosition();
+        const bsize = await ball.outerSize();
+        const avoid = AVOID * scale;
+        const r = BALL.r * scale;
+        let bx = bpos.x + BALL.cx * scale; // disc centre
+        let by = bpos.y + BALL.cy * scale;
+        const ballMin = { x: minX + BALL.cx * scale, y: minY + BALL.cy * scale };
+        const ballMax = { x: area.position.x + area.size.width - bsize.width + BALL.cx * scale, y: area.position.y + area.size.height - bsize.height + BALL.cy * scale };
+        let cursor = await cursorPosition().catch(() => null);
+        if (cursor && dist2(cursor.x, cursor.y, bx, by) < avoid) return; // you're near it: leave it alone
+
+        // A direction (mostly sideways, as a ball rolls) whose path stays furthest from the cursor.
+        let best: { dx: number; dy: number; len: number; score: number } | null = null;
+        for (let i = 0; i < 16; i++) {
+          const a = (Math.random() < 0.5 ? 0 : Math.PI) + (Math.random() - 0.5) * 0.9;
+          const len = (220 + Math.random() * 300) * scale;
+          const tx = clamp(bx + Math.cos(a) * len, ballMin.x, ballMax.x);
+          const ty = clamp(by + Math.sin(a) * len, ballMin.y, ballMax.y);
+          const real = dist2(bx, by, tx, ty);
+          if (real < 90 * scale) continue;
+          const score = cursor ? toSegment(cursor.x, cursor.y, bx, by, tx, ty) : 1e9;
+          if (!best || score > best.score) best = { dx: (tx - bx) / real, dy: (ty - by) / real, len: real, score };
+        }
+        if (!best || best.score < avoid) return;
+        const { dx, dy } = best;
+
+        // Behind the ball: the pet's body (about the middle of its window, a little low) just short of the disc.
+        const body = { x: size.width / 2, y: size.height * 0.62 };
+        const behind = (cx: number, cy: number) => ({
+          x: clamp(cx - dx * (r + 62 * scale) - body.x, minX, maxX),
+          y: clamp(cy - dy * (r + 30 * scale) - body.y + 16 * scale, minY, maxY),
+        });
+        const start = behind(bx, by);
+        await swimTo(start.x, start.y);
+        if (cancelled || !playOk.current) return;
+        cursor = await cursorPosition().catch(() => null);
+        if (cursor && toSegment(cursor.x, cursor.y, bx, by, bx + dx * best.len, by + dy * best.len) < avoid) return;
+
+        // Push: the ball speeds up while pushed, then rolls on and slows; the roll angle follows the distance.
+        setFacing(dx >= 0 ? 1 : -1);
+        setMoving(true);
+        let v = 0;
+        let travelled = 0;
+        let angle = 0;
+        let brake = 1;
+        let petV = 0;
+        let cur = cursor;
+        const watch = window.setInterval(() => {
+          void cursorPosition().then((c) => (cur = c), () => {});
+        }, 100);
+        await new Promise<void>((resolve) => {
+          let last = performance.now();
+          const step = () => {
+            if (cancelled) return resolve();
+            const t = performance.now();
+            const dt = Math.min(0.1, (t - last) / 1000);
+            last = t;
+            const contact = travelled < best!.len * 0.6 && brake === 1 && playOk.current;
+            if (cur && dist2(cur.x, cur.y, bx, by) < avoid * 0.85) brake = 4; // the cursor came near: stop
+            v = contact ? Math.min(230 * scale, v + 420 * scale * dt) : Math.max(0, v - 170 * scale * dt * brake);
+            const stepLen = v * dt;
+            const nx = clamp(bx + dx * stepLen, ballMin.x, ballMax.x);
+            const ny = clamp(by + dy * stepLen, ballMin.y, ballMax.y);
+            const moved = dist2(bx, by, nx, ny);
+            if (moved < stepLen * 0.5) v = 0; // hit the edge of the screen
+            bx = nx;
+            by = ny;
+            travelled += moved;
+            angle += (moved / r) * (180 / Math.PI) * (dx >= 0 ? 1 : -1);
+            void ball.setPosition(new PhysicalPosition(Math.round(bx - BALL.cx * scale), Math.round(by - BALL.cy * scale)));
+            void emit("ball-roll", { angle });
+            // The pet keeps up while pushing, then slows down behind the rolling ball.
+            if (contact) {
+              const p = behind(bx, by);
+              pos = new PhysicalPosition(Math.round(p.x), Math.round(p.y));
+              petV = v;
+            } else {
+              petV = Math.max(0, petV - 300 * scale * dt);
+              pos = new PhysicalPosition(Math.round(clamp(pos.x + dx * petV * dt, minX, maxX)), Math.round(clamp(pos.y + dy * petV * dt, minY, maxY)));
+            }
+            void win.setPosition(pos);
+            if (v <= 0 && !contact && petV <= 0) return resolve();
+            timer = window.setTimeout(step, 33);
+          };
+          step();
+        });
+        window.clearInterval(watch);
+        setMoving(false);
+        void emit("ball-roll", { settle: true });
+        void savePetPosition(pos.x, pos.y);
+      };
+
       while (!cancelled) {
-        const wait = Math.max(restUntil.current - Date.now(), 3000 + Math.random() * 8000);
+        // The animation pack has plenty to do in place, so it rests longer between walks.
+        const rest = shownRef.current === "pack" ? 12000 + Math.random() * 18000 : 3000 + Math.random() * 8000;
+        const wait = Math.max(restUntil.current - Date.now(), playOk.current ? 2500 + Math.random() * 4000 : rest);
         setMoving(false);
         await new Promise((r) => (timer = window.setTimeout(r, wait)));
+        // Let a clip that's playing finish before walking off.
+        while (!cancelled && acting.current) await new Promise((r) => (timer = window.setTimeout(r, 500)));
         if (cancelled) break;
+        if (playOk.current && Math.random() < 0.8) {
+          await playWithBall().catch(() => {});
+          continue;
+        }
         pos = await win.outerPosition();
         // Mostly short trips nearby, sometimes across the screen.
         const far = Math.random() < 0.25;
@@ -248,6 +444,7 @@ export default function DesktopPet() {
     return () => {
       cancelled = true;
       window.clearTimeout(timer);
+      void emit("ball-roll", { settle: true }); // interrupted mid-roll: the ball eases back upright
     };
     // mood changes only adjust speed; restarting the loop for them would make it stutter
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -356,7 +553,7 @@ export default function DesktopPet() {
         title={current ? `${current.label}…` : mood === "sleepy" ? "Sleeping" : mood === "hungry" ? "Hungry" : "Click for today's tokens"}
       >
         {shown === "pack" && pack ? (
-          <PackPet pack={pack.pack} base={pack.url} state={packState} activity={current?.kind ?? null} facing={facing} events={events} tierIndex={tierIndex} />
+          <PackPet pack={pack.pack} base={pack.url} state={packState} activity={current?.kind ?? null} facing={facing} events={events} tierIndex={tierIndex} idleMin={user.idleMs / 60_000} onActing={(a) => (acting.current = a)} />
         ) : shown === "images" ? (
           <ImagePet skin={skin} mood={mood} prop={prop} flip={(facing === 1) !== (imageFaces === "right")} />
         ) : (

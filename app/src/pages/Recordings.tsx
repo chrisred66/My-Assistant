@@ -1,6 +1,7 @@
 import { Fragment, useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { CopyButton, ErrorText } from "../components/common";
 import { TranscriptEditor } from "../components/TranscriptEdit";
+import { LinePairs } from "../components/LinePairs";
 import MeetingPanel, { MeetingSpeakers } from "./MeetingPanel";
 import { api, type Recording, type UploadResult } from "../lib/api";
 import {
@@ -559,51 +560,36 @@ function RecordingDetails({ recording: r, onChanged, canTranscribe }: { recordin
   return (
     <div className="stack-tight details">
       {actions}
-      <div className="two-col">
-        <div className="stack-tight">
-          <div className="row space-between">
-            <h3>Original{r.source_text && r.language ? ` · ${languageName(r.language)}` : ""}</h3>
-            <div className="row">
-              {r.source_text && <CopyButton text={r.source_text} />}
-              {hasAudio && canTranscribe && (
-                <button className="small-btn" onClick={() => void run("transcribe")} disabled={busy !== null}>
-                  {busy === "transcribe" ? "Transcribing…" : r.source_text ? "Transcribe again" : "Transcribe"}
-                </button>
-              )}
-            </div>
+      <div className="stack-tight">
+        <div className="row space-between wrap">
+          <h3>
+            {r.source_text && r.language ? languageName(r.language) : "Transcript"}
+            {r.source_text && !english && " → English"}
+          </h3>
+          <div className="row">
+            {r.source_text && <CopyButton text={r.source_text} label="Copy original" />}
+            {r.translated_text && <CopyButton text={r.translated_text} label="Copy English" />}
+            {hasAudio && canTranscribe && (
+              <button className="small-btn" onClick={() => void run("transcribe")} disabled={busy !== null}>
+                {busy === "transcribe" ? "Transcribing…" : r.source_text ? "Transcribe again" : "Transcribe"}
+              </button>
+            )}
+            {r.source_text && !english && canTranscribe && (
+              <button className="small-btn" onClick={() => void run("translate")} disabled={busy !== null}>
+                {busy === "translate" ? "Translating…" : r.translated_text ? "Translate again" : "Translate"}
+              </button>
+            )}
           </div>
-          {r.source_text ? (
-            <p className="prose" dir="auto">
-              {r.source_text}
-            </p>
-          ) : (
-            <p className="muted small">{!hasAudio ? "This recording wasn't finished, so no audio was saved." : canTranscribe ? "Not transcribed yet." : "Audio only: transcription is on the paid plan."}</p>
-          )}
         </div>
-
-        <div className="stack-tight">
-          <div className="row space-between">
-            <h3>English</h3>
-            <div className="row">
-              {r.translated_text && <CopyButton text={r.translated_text} />}
-              {r.source_text && !english && canTranscribe && (
-                <button className="small-btn" onClick={() => void run("translate")} disabled={busy !== null}>
-                  {busy === "translate" ? "Translating…" : r.translated_text ? "Translate again" : "Translate"}
-                </button>
-              )}
-            </div>
-          </div>
-          {r.translated_text ? (
-            <p className="prose">{r.translated_text}</p>
-          ) : (
-            <p className="muted small">
-              {english ? "The original is in English." : r.source_text ? "Not translated yet." : "Transcribe first."}
-            </p>
-          )}
-        </div>
-        <div className="details-error">
-          <ErrorText message={error} />
-        </div>
+        {r.source_text ? (
+          <>
+            <LinePairs source={r.source_text} english={r.translated_text} />
+            {!r.translated_text && !english && <p className="muted small">Not translated yet.</p>}
+          </>
+        ) : (
+          <p className="muted small">{!hasAudio ? "This recording wasn't finished, so no audio was saved." : canTranscribe ? "Not transcribed yet." : "Audio only: transcription is on the paid plan."}</p>
+        )}
+        <ErrorText message={error} />
       </div>
     </div>
   );

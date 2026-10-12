@@ -77,6 +77,19 @@ async fn claude_code_usage(days: Option<u64>) -> Result<Vec<claude_code::Entry>,
 }
 
 mod fullscreen;
+mod signals;
+
+/// The git repositories whose commits and reverts the desktop pet reacts to.
+#[tauri::command]
+fn pet_watch_repos(state: tauri::State<signals::GitRepos>, repos: Vec<String>) {
+    *state.0.lock().unwrap() = repos.into_iter().map(std::path::PathBuf::from).collect();
+}
+
+/// The app in front (exe, and whether it's a web browser), for the pet.
+#[tauri::command]
+fn foreground_app() -> fullscreen::Foreground {
+    fullscreen::foreground()
+}
 mod pet_skin;
 
 /// The desktop pet's images, mood -> data URL (empty: the built-in whale).
@@ -140,6 +153,9 @@ pub fn run() {
         .manage(system_audio::SystemAudio::default())
         .setup(|app| {
             fullscreen::watch(app.handle().clone());
+            let repos = signals::GitRepos::default();
+            signals::watch(app.handle().clone(), repos.0.clone());
+            app.manage(repos);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -154,7 +170,9 @@ pub fn run() {
             pet_skin_save,
             pet_skin_clear,
             pet_skin_credit,
-            pet_skin_set_credit
+            pet_skin_set_credit,
+            foreground_app,
+            pet_watch_repos
         ])
         // Closing the main window quits the app, including the desktop usage ball (otherwise the hidden or floating
         // ball window would keep the app running with no way back to the main window).
