@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to chrisManager. Newest first.
+All notable changes to My Assistant (formerly chrisManager). Newest first.
 Format based on [Keep a Changelog](https://keepachangelog.com/); versions follow [SemVer](https://semver.org/).
 
 When you change something, add a line under **Unreleased** in the right group

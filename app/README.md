@@ -21,14 +21,14 @@ as they're made, two at a time.
 ## Run it
 
 ```
-cd C:\xampp\htdocs\chrisManager\app
+cd C:\xampp\htdocs\My-Assistant\app
 npm install
 npm run tauri dev      # dev window with hot reload
 npm run tauri build    # installer in src-tauri\target\release\bundle\
 ```
 
 On first launch, sign in with the account made by `server\bin\create-user.php`. The server address
-defaults to `http://localhost/chrisManager/server/public`; from another device use the desktop's
+defaults to `http://localhost/My-Assistant/server/public`; from another device use the desktop's
 Tailscale name instead.
 
 ## How it talks to the server

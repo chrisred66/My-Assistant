@@ -56,7 +56,7 @@ export default function Login({ settings, onSignedIn }: Props) {
           <span>Server address</span>
           <input value={serverUrl} onChange={(e) => setServerUrl(e.target.value)} required spellCheck={false} />
           <small className="muted">
-            On this PC: http://localhost/chrisManager/server/public. From other devices: your desktop's Tailscale name.
+            On this PC: http://localhost/My-Assistant/server/public. From other devices: your desktop's Tailscale name.
           </small>
         </label>
         <div className="row">

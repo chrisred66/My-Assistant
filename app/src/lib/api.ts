@@ -1,4 +1,4 @@
-// Client for the chrisManager PHP API (see server/src/routes.php).
+// Client for the My Assistant PHP API (see server/src/routes.php).
 // Requests go through the Tauri HTTP plugin (Rust side), so the server needs no CORS headers.
 import { fetch } from "@tauri-apps/plugin-http";
 

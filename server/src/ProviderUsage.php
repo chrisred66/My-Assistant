@@ -115,7 +115,7 @@ final class ProviderUsage
     private static function fetchAnthropic(string $from, string $to): array
     {
         $headers = ['x-api-key: ' . Env::require('ANTHROPIC_ADMIN_KEY'), 'anthropic-version: 2023-06-01', 'Accept: application/json',
-                    'User-Agent: chrisManager/0.2 (personal usage sync)'];
+                    'User-Agent: My-Assistant/0.3 (personal usage sync)'];
         $range   = ['starting_at' => "{$from}T00:00:00Z", 'ending_at' => self::dayAfter($to) . 'T00:00:00Z', 'bucket_width' => '1d', 'limit' => '31'];
         $rows    = [];
 

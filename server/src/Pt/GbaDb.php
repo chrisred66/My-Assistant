@@ -9,7 +9,7 @@ use ChrisManager\HttpException;
 use PDO;
 
 /**
- * Connection to the GBA (Green Bus) database, kept separate from chrisManager's own database so
+ * Connection to the GBA (Green Bus) database, kept separate from My Assistant's own database so
  * the original data can be imported and exported as-is.
  *   GBA_DB_NAME (default gba_database); GBA_DB_USER / GBA_DB_PASS default to DB_USER / DB_PASS.
  */

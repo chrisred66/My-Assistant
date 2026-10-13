@@ -137,7 +137,7 @@ export const WORK: Partial<Record<ActivityKind, string[]>> = {
 
 /** Git, in the watched repositories. */
 export const GIT = { committing: "工作状态-清点归档", committed: "工作状态-雀跃庆祝", reverted: "工作状态-垂头叹气冒汗" };
-export const DEFAULT_REPOS = ["C:\\xampp\\htdocs\\chrisManager"];
+export const DEFAULT_REPOS = ["C:\\xampp\\htdocs\\My-Assistant"];
 
 /** Holidays (for 拆礼物): fixed days, plus Chinese New Year week. Edit to taste. */
 const FIXED_HOLIDAYS = ["01-01", "05-01", "05-02", "05-03", "05-04", "05-05", "06-06", "10-01", "10-02", "10-03", "10-04", "10-05", "10-06", "10-07", "12-24", "12-25", "12-26"];

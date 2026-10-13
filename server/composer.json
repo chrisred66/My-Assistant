@@ -1,6 +1,6 @@
 {
     "name": "chris/chrismanager-server",
-    "description": "Personal API server for chrisManager: auth, AI relay, token usage, data.",
+    "description": "Personal API server for My Assistant: auth, AI relay, token usage, data.",
     "type": "project",
     "require": {
         "php": ">=8.2",

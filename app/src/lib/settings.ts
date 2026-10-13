@@ -2,7 +2,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { load, type Store } from "@tauri-apps/plugin-store";
 
-export const DEFAULT_SERVER_URL = "http://localhost/chrisManager/server/public";
+export const DEFAULT_SERVER_URL = "http://localhost/My-Assistant/server/public";
 
 export interface Settings {
   serverUrl: string;

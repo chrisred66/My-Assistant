@@ -1,4 +1,4 @@
-# chrisManager
+# My Assistant
 
 A personal toolkit. The desktop app is called **My Assistant**.
 
@@ -33,10 +33,10 @@ Phone / laptop app ──(Tailscale)──► always-on desktop
 Needs XAMPP (PHP 8.2+, MariaDB), Composer and Git. In `C:\xampp\php\php.ini`, enable `extension=zip` and
 `extension=intl` (intl lets `APP_TIMEZONE=system` follow the Windows timezone), then restart Apache.
 
-1. Clone into `htdocs`: `git clone <repo-url> C:\xampp\htdocs\chrisManager`
+1. Clone into `htdocs`: `git clone https://github.com/chrisred66/My-Assistant.git C:\xampp\htdocs\My-Assistant`
 2. Install dependencies:
    ```
-   cd C:\xampp\htdocs\chrisManager\server
+   cd C:\xampp\htdocs\My-Assistant\server
    composer install
    ```
 3. Create the database and a dedicated user (phpMyAdmin's SQL tab, or `mysql -u root -p`):
@@ -52,7 +52,7 @@ Needs XAMPP (PHP 8.2+, MariaDB), Composer and Git. In `C:\xampp\php\php.ini`, en
    C:\xampp\php\php.exe bin\migrate.php
    C:\xampp\php\php.exe bin\create-user.php you@example.com
    ```
-6. Check it: <http://localhost/chrisManager/server/public/health> should return `{"ok":true,...}`.
+6. Check it: <http://localhost/My-Assistant/server/public/health> should return `{"ok":true,...}`.
 
 Dev machines use `chrismanager_dev` with test data. Only the always-on desktop uses the real `chrismanager` database.
 For PT Management, import `gba_database` from an export of the ptManagement machine (the app shows a guide while it's
@@ -64,7 +64,7 @@ missing).
 2. XAMPP Control Panel → tick **Service** for Apache and MySQL so they start at boot.
 3. Set a MySQL root password and keep MySQL on localhost (`bind-address=127.0.0.1` in `my.ini`).
 4. Install [Tailscale](https://tailscale.com) on the desktop, laptop and phone. The app then reaches
-   `http://<desktop-tailscale-name>/chrisManager/server/public`. Don't port-forward on the router.
+   `http://<desktop-tailscale-name>/My-Assistant/server/public`. Don't port-forward on the router.
 5. Windows Update → set active hours. BIOS → "restore on AC power loss".
 
 Deploying an update: `git pull`, `composer install`, then `php bin\migrate.php`.
@@ -73,8 +73,8 @@ Deploying an update: `git pull`, `composer install`, then `php bin\migrate.php`.
 
 | When | Command | Does |
 |---|---|---|
-| Daily 08:00 ("My Assistant Daily Feed") | `C:\xampp\php\php-win.exe C:\xampp\htdocs\chrisManager\server\bin\daily-feed.php` | Builds everyone's Daily Feed (skips feeds already built) |
-| Nightly | `C:\xampp\php\php.exe C:\xampp\htdocs\chrisManager\server\bin\sync-usage.php 3` | Pulls the last 3 days of usage and billed cost from Anthropic and OpenAI |
+| Daily 08:00 ("My Assistant Daily Feed") | `C:\xampp\php\php-win.exe C:\xampp\htdocs\My-Assistant\server\bin\daily-feed.php` | Builds everyone's Daily Feed (skips feeds already built) |
+| Nightly | `C:\xampp\php\php.exe C:\xampp\htdocs\My-Assistant\server\bin\sync-usage.php 3` | Pulls the last 3 days of usage and billed cost from Anthropic and OpenAI |
 | Nightly | `C:\xampp\mysql\bin\mysqldump.exe -u chrismanager -p<pass> chrismanager > D:\backups\chrismanager-%date:~0,4%%date:~5,2%%date:~8,2%.sql` | Database backup (also back up `gba_database`) |
 
 Also copy `server\storage\recordings` somewhere off the machine.
@@ -165,7 +165,7 @@ Council's notices), cached in `server/storage/cn-holidays/`.
 
 ## API
 
-Base address: `http://<server>/chrisManager/server/public`. Every call except `/health` and `/auth/login` needs
+Base address: `http://<server>/My-Assistant/server/public`. Every call except `/health` and `/auth/login` needs
 `Authorization: Bearer <token>`. Responses are JSON.
 
 **Accounts**
@@ -255,7 +255,7 @@ The Operations endpoints work on trial trips with `dataset=trial` (and `trial=ID
 
 Quick test from PowerShell:
 ```powershell
-$base = "http://localhost/chrisManager/server/public"
+$base = "http://localhost/My-Assistant/server/public"
 $login = Invoke-RestMethod "$base/auth/login" -Method Post -ContentType "application/json" `
   -Body '{"email":"you@example.com","password":"...","device":"pc"}'
 $h = @{ Authorization = "Bearer $($login.token)" }

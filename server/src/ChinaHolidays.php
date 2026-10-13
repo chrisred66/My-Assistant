@@ -66,7 +66,7 @@ final class ChinaHolidays
     {
         $c = curl_init(sprintf(self::URL, $year));
         curl_setopt_array($c, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 10, CURLOPT_FOLLOWLOCATION => true,
-            CURLOPT_USERAGENT => 'chrisManager (DeepSeek off-peak pricing)']);
+            CURLOPT_USERAGENT => 'My-Assistant (DeepSeek off-peak pricing)']);
         $body = curl_exec($c);
         $status = curl_getinfo($c, CURLINFO_HTTP_CODE);
         curl_close($c);
