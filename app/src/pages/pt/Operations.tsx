@@ -1,12 +1,13 @@
 // PT Management → Operations: trip-log KPIs, trends, efficiency and exceptions (ported from ptManagement's
 // operation monitoring), plus upload / manual entry / duplicates for edit access.
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { BarList, ColumnChart, LineChart, SeriesLegend, type BarItem, type Color, type Point } from "../../components/charts";
+import { BarList, ColumnChart, LineChart, PairedBarList, SeriesLegend, type BarItem, type Color, type PairItem, type Point } from "../../components/charts";
 import { ErrorText } from "../../components/common";
 import {
   api,
   canPt,
   type PtDataset,
+  type PtEnergyTotals,
   type PtOperations,
   type PtSeverity,
   type PtTrial,
@@ -19,6 +20,11 @@ import { errorMessage, formatInteger, LOCALE } from "../../lib/format";
 import TripTools from "./TripTools";
 
 type Preset = "30" | "90" | "all" | "custom";
+/** Consumption by bus and route: the hot season (June–September, Abu Dhabi summer) against the mild season (October–May). */
+const SEASON_SERIES: [{ label: string; color: Color }, { label: string; color: Color }] = [
+  { label: "Hot season (Jun–Sep)", color: "c2" },
+  { label: "Mild season (Oct–May)", color: "c1" },
+];
 
 export const SEVERITY_COLOR: Record<PtSeverity, Color> = { critical: "critical", serious: "serious", warning: "warning", info: "neutral" };
 const ELECTRIC: Color = "c1";
@@ -230,16 +236,17 @@ export default function Operations({
   const consumptionSeries = (key: "electric" | "hydrogen", label: string, color: Color) =>
     isTrial && fleetTrend ? [{ key, label: "This trial", color }, { key: "fleet", label: "Fleet average", color: "neutral" as Color }] : [{ key, label, color }];
 
-  const busBars = (energy: string): BarItem[] =>
+  // Sorted by the hot season (the higher, A/C-loaded figure), falling back to mild when a bus has no summer trips.
+  const busPairs = (energy: string): PairItem[] =>
     (data?.by_bus ?? [])
-      .filter((b) => b.energy === energy && b.consumption !== null)
-      .sort((a, b) => (b.consumption ?? 0) - (a.consumption ?? 0))
+      .filter((b) => b.energy === energy && (b.consumption_hot !== null || b.consumption_mild !== null))
+      .sort((a, b) => (b.consumption_hot ?? b.consumption_mild ?? 0) - (a.consumption_hot ?? a.consumption_mild ?? 0))
       .map((b) => ({
         key: String(b.bus_id),
         label: `Bus ${b.label}${b.model ? ` · ${b.model}` : ""}`,
-        value: b.consumption ?? 0,
-        color: energyColor(energy),
-        detail: `${formatInteger(b.trips)} trips · ${km(b.distance)} · ${fixed(b.energy_used, 0)} ${b.unit} used`,
+        a: b.consumption_hot,
+        b: b.consumption_mild,
+        detail: `All year ${fixed(b.consumption, energy === "Hydrogen" ? 2 : 1)} · ${formatInteger(b.trips)} trips · ${km(b.distance)}`,
       }));
 
   const routeBars: BarItem[] = (data?.by_route ?? []).slice(0, 10).map((r) => ({
@@ -278,19 +285,19 @@ export default function Operations({
     };
   });
 
-  const routeConsumption = (key: "electric_per_100km" | "hydrogen_per_100km", color: Color): BarItem[] =>
+  const routePairs = (energy: "electric" | "hydrogen"): PairItem[] =>
     (data?.by_route ?? [])
-      .filter((r) => r[key] !== null)
-      .sort((a, b) => (b[key] ?? 0) - (a[key] ?? 0))
+      .filter((r) => r[`${energy}_hot`] !== null || r[`${energy}_mild`] !== null)
+      .sort((a, b) => (b[`${energy}_hot`] ?? b[`${energy}_mild`] ?? 0) - (a[`${energy}_hot`] ?? a[`${energy}_mild`] ?? 0))
       .map((r) => ({
         key: r.route,
         label: `Route ${r.route}`,
-        value: r[key] ?? 0,
-        color,
-        detail: `${formatInteger(r.trips)} trips on ${r.buses} bus(es) · ${km(r.distance)}`,
+        a: r[`${energy}_hot`],
+        b: r[`${energy}_mild`],
+        detail: `All year ${fixed(r[`${energy}_per_100km`], energy === "hydrogen" ? 2 : 1)} · ${formatInteger(r.trips)} trips on ${r.buses} bus(es) · ${km(r.distance)}`,
       }));
-  const electricRoutes = routeConsumption("electric_per_100km", ELECTRIC);
-  const hydrogenRoutes = routeConsumption("hydrogen_per_100km", HYDROGEN);
+  const electricRoutes = routePairs("electric");
+  const hydrogenRoutes = routePairs("hydrogen");
 
   const socPoints: Point[] = (data?.soc_drop_bands ?? []).map((b) => ({
     label: `${b.band}–${b.band + 10}%`,
@@ -400,6 +407,7 @@ export default function Operations({
                 <span className="muted small">
                   {fixed(electric.energy_used, 0)} kWh over {km(electric.distance ?? 0)}
                 </span>
+                <SeasonSplit e={electric} digits={1} />
               </div>
             )}
             {hydrogen && (
@@ -413,6 +421,7 @@ export default function Operations({
                 <span className="muted small">
                   {fixed(hydrogen.energy_used, 0)} kg over {km(hydrogen.distance ?? 0)}
                 </span>
+                <SeasonSplit e={hydrogen} digits={2} />
               </div>
             )}
             <div className="tile">
@@ -524,16 +533,25 @@ export default function Operations({
                 )}
               </div>
 
+              <p className="muted small">
+                Consumption by bus and by route: hot season (June–September, Abu Dhabi summer, heavy air-conditioning load) against the mild season
+                (October–May), with the summer change on the right.
+              </p>
               <div className="chart-grid">
                 {(["Electric", "Hydrogen"] as const).map((energy) => {
-                  const bars = busBars(energy);
-                  if (!bars.length) return null;
+                  const pairs = busPairs(energy);
+                  if (!pairs.length) return null;
                   return (
                     <div key={energy} className="card stack">
                       <h2>
                         {energy} buses: consumption ({energy === "Hydrogen" ? "kg" : "kWh"}/100 km)
                       </h2>
-                      <BarList items={bars} format={(v) => fixed(v, energy === "Hydrogen" ? 2 : 1)} label={`${energy} consumption by bus`} />
+                      <PairedBarList
+                        items={pairs}
+                        series={SEASON_SERIES}
+                        format={(v) => fixed(v, energy === "Hydrogen" ? 2 : 1)}
+                        label={`${energy} consumption by bus, hot season against mild season`}
+                      />
                     </div>
                   );
                 })}
@@ -577,17 +595,17 @@ export default function Operations({
                     {electricRoutes.length > 0 && (
                       <>
                         <h3>
-                          <span className="swatch bg-c1" aria-hidden /> Electric (kWh/100 km)
+                          Electric (kWh/100 km)
                         </h3>
-                        <BarList items={electricRoutes} format={(v) => fixed(v)} label="Electric consumption by route" />
+                        <PairedBarList items={electricRoutes} series={SEASON_SERIES} format={(v) => fixed(v)} label="Electric consumption by route, hot season against mild season" />
                       </>
                     )}
                     {hydrogenRoutes.length > 0 && (
                       <>
                         <h3>
-                          <span className="swatch bg-c2" aria-hidden /> Hydrogen (kg/100 km)
+                          Hydrogen (kg/100 km)
                         </h3>
-                        <BarList items={hydrogenRoutes} format={(v) => fixed(v, 2)} label="Hydrogen consumption by route" />
+                        <PairedBarList items={hydrogenRoutes} series={SEASON_SERIES} format={(v) => fixed(v, 2)} label="Hydrogen consumption by route, hot season against mild season" />
                       </>
                     )}
                   </div>
@@ -813,5 +831,20 @@ function TripList({
       )}
       </div>
     </details>
+  );
+}
+
+/** A consumption tile's hot-season / mild-season figures (each only when that season has trips in range). */
+function SeasonSplit({ e, digits }: { e: PtEnergyTotals; digits: number }) {
+  if (e.consumption_hot === null && e.consumption_mild === null) return null;
+  return (
+    <span className="season-split small">
+      <span className="season-hot">
+        Hot (Jun–Sep) <strong>{fixed(e.consumption_hot, digits)}</strong>
+      </span>
+      <span>
+        Mild (Oct–May) <strong>{fixed(e.consumption_mild, digits)}</strong>
+      </span>
+    </span>
   );
 }

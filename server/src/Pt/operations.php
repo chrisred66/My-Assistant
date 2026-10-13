@@ -9,6 +9,8 @@ declare(strict_types=1);
  * Electric and hydrogen buses are reported separately: energy_used is kWh for battery buses and kg of
  * hydrogen for fuel-cell buses, so they can't be added together. Totals of distance and energy leave out
  * trips with an impossible distance (≤ 0 or over PT_MAX_TRIP_KM), which are listed as exceptions instead.
+ * Consumption is also given for the hot season (June-September, Abu Dhabi summer, heavy air-conditioning load) and the
+ * mild season (October-May) separately.
  */
 
 /** @var ChrisManager\Router $router */
@@ -24,6 +26,8 @@ const PT_HIGH_KWH_PER_100KM = 140; // the original app's 1.4 kWh/km
 const PT_HIGH_KG_PER_100KM = 14;   // hydrogen: ~p97 of the imported trips (median 8.6)
 const PT_LOW_END_SOC = 20;
 const PT_LOW_START_SOC = 80;
+const PT_HOT_MONTHS = [6, 7, 8, 9];
+const PT_HOT = 'MONTH(t.date) IN (6, 7, 8, 9)'; // PT_HOT_MONTHS, as SQL
 
 /**
  * Every read endpoint works on one of two datasets, chosen with ?dataset=:
@@ -173,7 +177,11 @@ $router->get('/pt/operations', function (Request $r) {
     $e = PT_ENERGY;
     $v = PT_VALID;
     // Consumption = energy ÷ distance over trips that have an energy figure (not an average of per-trip ratios).
-    $consumption = "SUM(CASE WHEN $v THEN t.energy_used END) / NULLIF(SUM(CASE WHEN $v AND t.energy_used IS NOT NULL THEN t.distance END), 0) * 100";
+    $cons = fn (string $cond = 'TRUE') => "SUM(CASE WHEN $v AND $cond THEN t.energy_used END)
+        / NULLIF(SUM(CASE WHEN $v AND $cond AND t.energy_used IS NOT NULL THEN t.distance END), 0) * 100";
+    $consumption = $cons();
+    $hot = PT_HOT;
+    $seasons = $cons($hot) . ' AS cons_hot, ' . $cons("NOT $hot") . ' AS cons_mild';
 
     $totals = GbaDb::one(
         "SELECT COUNT(*) AS trips, COUNT(DISTINCT t.bus_id) AS buses, COUNT(DISTINCT t.driver_id) AS drivers,
@@ -185,7 +193,8 @@ $router->get('/pt/operations', function (Request $r) {
     $byEnergy = [];
     foreach (GbaDb::all(
         "SELECT $e AS energy, COUNT(*) AS trips, COUNT(DISTINCT t.bus_id) AS buses, SUM(CASE WHEN $v THEN t.distance END) AS distance,
-                SUM(CASE WHEN $v THEN t.energy_used END) AS energy_used, $consumption AS consumption
+                SUM(CASE WHEN $v THEN t.energy_used END) AS energy_used, $consumption AS consumption, $seasons,
+                SUM(CASE WHEN $v AND $hot THEN t.distance END) AS distance_hot, SUM(CASE WHEN $v AND NOT $hot THEN t.distance END) AS distance_mild
            " . ptFrom($r) . " WHERE $where GROUP BY energy ORDER BY trips DESC",
         $params,
     ) as $row) {
@@ -193,6 +202,8 @@ $router->get('/pt/operations', function (Request $r) {
             'energy' => $row['energy'], 'unit' => $row['energy'] === 'Hydrogen' ? 'kg' : 'kWh',
             'trips' => (int) $row['trips'], 'buses' => (int) $row['buses'], 'distance' => ptRound($row['distance']),
             'energy_used' => ptRound($row['energy_used']), 'consumption' => ptRound($row['consumption'], 2),
+            'consumption_hot' => ptRound($row['cons_hot'], 2), 'consumption_mild' => ptRound($row['cons_mild'], 2),
+            'distance_hot' => ptRound($row['distance_hot']), 'distance_mild' => ptRound($row['distance_mild']),
         ];
     }
 
@@ -217,12 +228,13 @@ $router->get('/pt/operations', function (Request $r) {
         'bus_id' => (int) $b['bus_id'], 'label' => (string) $b['label'], 'model' => $b['model'], 'manufacturer' => $b['manufacturer'], 'energy' => $b['energy'],
         'unit' => $b['energy'] === 'Hydrogen' ? 'kg' : 'kWh', 'trips' => (int) $b['trips'], 'days' => (int) $b['days'],
         'distance' => ptRound($b['distance']) ?? 0.0, 'energy_used' => ptRound($b['energy_used']),
-        'consumption' => ptRound($b['consumption'], 2), 'avg_soc_drop' => ptRound($b['avg_soc_drop']),
+        'consumption' => ptRound($b['consumption'], 2), 'consumption_hot' => ptRound($b['cons_hot'], 2),
+        'consumption_mild' => ptRound($b['cons_mild'], 2), 'avg_soc_drop' => ptRound($b['avg_soc_drop']),
         'min_end_soc' => ptRound($b['min_end_soc']), 'exceptions' => (int) $b['exceptions'],
     ], GbaDb::all(
         "SELECT t.bus_id, " . ptBusLabel($r) . " AS label, m.model, m.manufacturer, $e AS energy, COUNT(*) AS trips, COUNT(DISTINCT t.date) AS days,
                 SUM(CASE WHEN $v THEN t.distance END) AS distance, SUM(CASE WHEN $v THEN t.energy_used END) AS energy_used,
-                $consumption AS consumption, AVG(t.soc_drop) AS avg_soc_drop, MIN(t.end_soc) AS min_end_soc,
+                $consumption AS consumption, $seasons, AVG(t.soc_drop) AS avg_soc_drop, MIN(t.end_soc) AS min_end_soc,
                 SUM($issues IS NOT NULL AND $issues <> 'low_start_soc') AS exceptions
            " . ptFrom($r) . " WHERE $where GROUP BY t.bus_id, label, m.model, m.manufacturer, energy ORDER BY t.bus_id",
         $params,
@@ -232,6 +244,8 @@ $router->get('/pt/operations', function (Request $r) {
         'route' => $x['route'], 'trips' => (int) $x['trips'], 'buses' => (int) $x['buses'], 'distance' => ptRound($x['distance']) ?? 0.0,
         'avg_trip_km' => ptRound($x['avg_trip_km']), 'electric_per_100km' => ptRound($x['electric_cons'], 2),
         'hydrogen_per_100km' => ptRound($x['hydrogen_cons'], 2), 'avg_soc_drop' => ptRound($x['avg_soc_drop']),
+        'electric_hot' => ptRound($x['electric_hot'], 2), 'electric_mild' => ptRound($x['electric_mild'], 2),
+        'hydrogen_hot' => ptRound($x['hydrogen_hot'], 2), 'hydrogen_mild' => ptRound($x['hydrogen_mild'], 2),
     ], GbaDb::all(
         "SELECT COALESCE(t.route, '(none)') AS route, COUNT(*) AS trips, COUNT(DISTINCT t.bus_id) AS buses,
                 SUM(CASE WHEN $v THEN t.distance END) AS distance, AVG(CASE WHEN $v THEN t.distance END) AS avg_trip_km,
@@ -239,6 +253,8 @@ $router->get('/pt/operations', function (Request $r) {
                   / NULLIF(SUM(CASE WHEN $v AND $e = 'Electric' AND t.energy_used IS NOT NULL THEN t.distance END), 0) * 100 AS electric_cons,
                 SUM(CASE WHEN $v AND $e = 'Hydrogen' THEN t.energy_used END)
                   / NULLIF(SUM(CASE WHEN $v AND $e = 'Hydrogen' AND t.energy_used IS NOT NULL THEN t.distance END), 0) * 100 AS hydrogen_cons,
+                " . $cons("$e = 'Electric' AND $hot") . " AS electric_hot, " . $cons("$e = 'Electric' AND NOT $hot") . " AS electric_mild,
+                " . $cons("$e = 'Hydrogen' AND $hot") . " AS hydrogen_hot, " . $cons("$e = 'Hydrogen' AND NOT $hot") . " AS hydrogen_mild,
                 AVG(t.soc_drop) AS avg_soc_drop
            " . ptFrom($r) . " WHERE $where GROUP BY route ORDER BY trips DESC",
         $params,
@@ -284,6 +300,7 @@ $router->get('/pt/operations', function (Request $r) {
         'exceptions' => $counts,
         'exception_buses' => $exceptionBuses,
         'soc_drop_bands' => $socBands,
+        'hot_months' => PT_HOT_MONTHS,
     ];
 });
 

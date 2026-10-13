@@ -1,3 +1,4 @@
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import { BarList, LineChart, type BarItem as ShareItem, type Color, type Point } from "../components/charts";
 import { ErrorText, ProviderSelect } from "../components/common";
@@ -274,7 +275,13 @@ export default function Usage() {
             </button>
           </div>
         </div>
-        <button className="small-btn align-end" onClick={() => void load()}>
+        <button
+          className="small-btn align-end"
+          onClick={() => {
+            void load();
+            void loadSources();
+          }}
+        >
           Refresh
         </button>
       </div>
@@ -469,24 +476,34 @@ function Sources({
       </div>
       <dl className="kv">
         <dt>Anthropic</dt>
-        <dd className="small">{syncLine(sources.anthropic)}</dd>
+        <dd className="small source-row">
+          {syncLine(sources.anthropic)}
+          <ConsoleBalance url="https://console.anthropic.com/settings/billing" />
+        </dd>
         <dt>OpenAI</dt>
-        <dd className="small">{syncLine(sources.openai)}</dd>
+        <dd className="small source-row">
+          {syncLine(sources.openai)}
+          <ConsoleBalance url="https://platform.openai.com/settings/organization/billing/overview" />
+        </dd>
         <dt>DeepSeek</dt>
-        <dd className="small">
+        <dd className="small source-row">
+          <span className="muted">No usage-history API, so usage here comes from this app.</span>
           {ds.balance_error ? (
             <span className="error-text small">Balance unavailable: {ds.balance_error}</span>
           ) : (
             <span>
-              Balance{" "}
-              {(ds.balance ?? [])
-                .filter((b) => Number(b.total) > 0)
-                .map((b) => `${Number(b.total).toFixed(2)} ${b.currency}`)
-                .join(" · ") || "0.00"}
-              {ds.available === false && " (not enough to make requests)"}
+              Balance <strong>{balanceText(ds.balance ?? [])}</strong>
+              {(ds.balance ?? []).map((b) =>
+                Number(b.granted) > 0 ? (
+                  <span key={b.currency} className="muted">
+                    {" "}
+                    ({money(b.granted, b.currency)} granted credit, spent first · {money(b.topped_up, b.currency)} topped up)
+                  </span>
+                ) : null,
+              )}
+              {ds.available === false && <span className="error-text"> · too low to make requests, top up at platform.deepseek.com</span>}
             </span>
           )}
-          <span className="muted"> · No usage-history API, so usage here comes from this app.</span>
         </dd>
       </dl>
       <p className="muted small">
@@ -610,5 +627,35 @@ function Routing() {
         </dl>
       )}
     </details>
+  );
+}
+
+/** An amount in the account's currency: $ for USD, ¥ for CNY. */
+function money(v: string, currency: string) {
+  const symbol = currency === "USD" ? "$" : currency === "CNY" ? "¥" : "";
+  return `${symbol}${Number(v).toFixed(2)}${symbol ? "" : ` ${currency}`}`;
+}
+
+/** DeepSeek's balance per currency (only currencies holding money, unless that's all there is). */
+function balanceText(balance: { currency: string; total: string }[]) {
+  const held = balance.filter((b) => Number(b.total) > 0);
+  return (held.length ? held : balance).map((b) => money(b.total, b.currency)).join(" · ") || "$0.00";
+}
+
+/** Anthropic and OpenAI have no balance API: link to where the balance is shown. */
+function ConsoleBalance({ url }: { url: string }) {
+  return (
+    <span className="muted">
+      Balance: no API for it,{" "}
+      <a
+        href={url}
+        onClick={(e) => {
+          e.preventDefault();
+          void openUrl(url).catch(() => window.open(url, "_blank"));
+        }}
+      >
+        see the billing page
+      </a>
+    </span>
   );
 }

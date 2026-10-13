@@ -437,3 +437,101 @@ export function BarList({
     </div>
   );
 }
+
+export interface PairItem {
+  key: string;
+  label: string;
+  a: number | null;
+  b: number | null;
+  detail?: ReactNode;
+}
+
+/**
+ * Two horizontal bars per item on one scale (e.g. this season against that one), each with its value, and the change
+ * from b to a at the right edge. A missing value leaves its bar out.
+ */
+export function PairedBarList({
+  items,
+  series,
+  format,
+  label,
+}: {
+  items: PairItem[];
+  series: [{ label: string; color: Color }, { label: string; color: Color }];
+  format: (v: number) => string;
+  label: string;
+}) {
+  const [ref, width] = useWidth<HTMLDivElement>();
+  const [hover, setHover] = useState<number | null>(null);
+  const thick = 10;
+  const gap = 2;
+  const row = thick * 2 + gap + 14;
+  const labelW = Math.min(200, width * 0.34);
+  const changeW = 56;
+  const valueW = 64;
+  const innerW = Math.max(0, width - labelW - valueW - changeW);
+  const max = Math.max(0, ...items.flatMap((i) => [i.a ?? 0, i.b ?? 0])) || 1;
+  const height = items.length * row + 4;
+  const maxChars = Math.max(6, Math.floor((labelW - 12) / 6.8));
+  const change = (it: PairItem) => (it.a !== null && it.b ? ((it.a - it.b) / it.b) * 100 : null);
+
+  return (
+    <div className="chart" ref={ref}>
+      <SeriesLegend series={series} />
+      {width > 0 && (
+        <svg width={width} height={height} role="img" aria-label={label}>
+          <line x1={labelW} x2={labelW} y2={height} className="axis-line" />
+          {items.map((it, i) => {
+            const top = i * row + (row - thick * 2 - gap) / 2;
+            const c = change(it);
+            const bar = (v: number | null, y: number, color: Color) => {
+              if (v === null) return null;
+              const w = Math.max(v > 0 ? 2 : 0, (v / max) * innerW);
+              return (
+                <>
+                  {w > 0 && <path d={rightRounded(labelW, y, w, thick, RADIUS)} className={`fill-${color}`} />}
+                  <text x={labelW + w + 6} y={y + thick / 2} dy="0.32em" className="bar-value small-value">
+                    {format(v)}
+                  </text>
+                </>
+              );
+            };
+            return (
+              <g key={it.key} onMouseEnter={() => setHover(i)} onMouseLeave={() => setHover(null)}>
+                {hover === i && <rect y={i * row} width={width} height={row} className="hover-wash" />}
+                <text x={labelW - 8} y={i * row + row / 2} dy="0.32em" textAnchor="end" className="bar-label">
+                  {it.label.length > maxChars ? `${it.label.slice(0, maxChars - 1)}…` : it.label}
+                </text>
+                {bar(it.a, top, series[0].color)}
+                {bar(it.b, top + thick + gap, series[1].color)}
+                {c !== null && (
+                  <text x={width - 4} y={i * row + row / 2} dy="0.32em" textAnchor="end" className="bar-value pair-change">
+                    {c > 0 ? "+" : c < 0 ? "−" : "±"}
+                    {Math.abs(c).toFixed(0)}%
+                  </text>
+                )}
+                <rect y={i * row} width={width} height={row} fill="transparent" />
+              </g>
+            );
+          })}
+        </svg>
+      )}
+      {hover !== null && items[hover] && (
+        <Tooltip x={labelW + 40} y={hover * row + row + 28} containerWidth={width}>
+          <strong>{items[hover].label}</strong>
+          <div className="tooltip-row small">
+            <Swatch color={series[0].color} />
+            <span>{series[0].label}</span>
+            <span className="num">{items[hover].a === null ? "—" : format(items[hover].a!)}</span>
+          </div>
+          <div className="tooltip-row small">
+            <Swatch color={series[1].color} />
+            <span>{series[1].label}</span>
+            <span className="num">{items[hover].b === null ? "—" : format(items[hover].b!)}</span>
+          </div>
+          {items[hover].detail && <div className="small muted">{items[hover].detail}</div>}
+        </Tooltip>
+      )}
+    </div>
+  );
+}

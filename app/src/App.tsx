@@ -16,14 +16,18 @@ import Language, { type LanguageTab } from "./pages/Language";
 import PtManagement from "./pages/pt/PtManagement";
 import SettingsPage from "./pages/Settings";
 import Usage from "./pages/Usage";
+import DailyFeed from "./pages/DailyFeed";
+import { watchDailyFeed } from "./lib/feedNotify";
+import { listen } from "@tauri-apps/api/event";
 import { serveActivityRequests } from "./lib/activity";
 
 const APP_NAME = "My Assistant";
 
-type Page = "pt" | "language" | "usage" | "settings";
+type Page = "pt" | "feed" | "language" | "usage" | "settings";
 
 const NAV: { id: Page; label: string; visible: (u: User) => boolean }[] = [
   { id: "pt", label: "PT Management", visible: (u) => hasPt(u) },
+  { id: "feed", label: "Daily Feed", visible: (u) => u.access.general },
   { id: "language", label: "General Tool", visible: (u) => u.access.general },
   { id: "usage", label: "Usage", visible: (u) => u.access.usage },
   { id: "settings", label: "Settings", visible: () => true },
@@ -87,6 +91,21 @@ export default function App() {
     if (ballOwner) void petEnabled().then((on) => (on ? showPet() : hidePet()));
     else void hidePet();
   }, [ballOwner]);
+
+  // Daily Feed delivery (the Super Admin): the 8:00 notification and the pet's announcement.
+  useEffect(() => {
+    if (!ballOwner) return;
+    return watchDailyFeed();
+  }, [ballOwner]);
+  // The pet's "open" button: show a page.
+  useEffect(() => {
+    const unlisten = listen<{ page: string }>("open-page", (e) => {
+      if (NAV.some((n) => n.id === e.payload.page)) setPage(e.payload.page as Page);
+    });
+    return () => {
+      void unlisten.then((f) => f()).catch(() => {});
+    };
+  }, []);
 
   async function logout() {
     // Viewing as another account: "sign out" goes back to your own account instead.
@@ -207,6 +226,7 @@ export default function App() {
             canTranscribe={session.user.access.transcribe}
           />
         )}
+        {page === "feed" && <DailyFeed user={session.user} />}
         {page === "usage" && <Usage />}
         {page === "pt" && <PtManagement user={session.user} />}
         {page === "settings" && <SettingsPage

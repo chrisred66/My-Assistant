@@ -142,3 +142,17 @@ export async function setPetLook(look: PetLook): Promise<void> {
   await (await store()).set("petLook", look);
   await emit("pet-skin-changed");
 }
+
+// ---- Daily Feed announcement ---------------------------------------------------------------------------------------
+
+/** Whether today's feed was announced (main window) but the pet hasn't shown it yet. */
+export async function feedToAnnounce(): Promise<boolean> {
+  const s = await store();
+  const notified = await s.get<string>("feedNotified");
+  return !!notified && notified !== (await s.get<string>("petFeedShown"));
+}
+
+export async function feedAnnounced(): Promise<void> {
+  const s = await store();
+  await s.set("petFeedShown", (await s.get<string>("feedNotified")) ?? "");
+}

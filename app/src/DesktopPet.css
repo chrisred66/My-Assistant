@@ -246,9 +246,8 @@ html.pet-window #root {
 
 /* ---- Animation pack (640x360 clips, the character in the middle) ---- */
 .pet-body.pack {
-  width: 240px;
-  height: 232px;
-  overflow: hidden;
+  width: 480px;
+  height: 270px; /* the whole 640x360 frame: props and effects aren't cut off */
 }
 .pack-pet {
   position: relative;
@@ -259,7 +258,7 @@ html.pet-window #root {
   position: absolute;
   top: 0;
   left: 50%;
-  height: 250px; /* 640x360 -> 444x250: the character about 185px tall */
+  height: 270px; /* 640x360 -> 480x270: the character about 200px tall */
   width: auto;
   transform: translateX(-50%);
   opacity: 0;
@@ -272,4 +271,17 @@ html.pet-window #root {
   max-width: 180px;
   text-align: center;
   word-break: break-all;
+}
+
+.pet-news {
+  gap: 6px;
+}
+.pet-news button {
+  padding: 4px 10px;
+  border: 1px solid rgba(120, 170, 255, 0.35);
+  border-radius: 7px;
+  background: rgba(56, 189, 248, 0.18);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
 }

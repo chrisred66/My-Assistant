@@ -7,14 +7,16 @@ import Fleet from "./Fleet";
 import Maintenance from "./Maintenance";
 import Charging from "./Charging";
 import Operations from "./Operations";
+import Drivers from "./Drivers";
 import Trials from "./Trials";
 
-type Section = "fleet" | "operations" | "trials" | "charging" | "maintenance";
+type Section = "fleet" | "operations" | "drivers" | "trials" | "charging" | "maintenance";
 
 // Each section belongs to a PT module; people see the sections of the modules their account includes.
 const SECTIONS: { id: Section; module: PtModule; label: string; description: string }[] = [
   { id: "fleet", module: "planning", label: "Fleet", description: "Electric and hydrogen bus manufacturers, their models and vehicle rosters." },
   { id: "operations", module: "operations", label: "Operations", description: "Daily trip logs (upload or manual entry), KPIs, trends, efficiency and trip exceptions." },
+  { id: "drivers", module: "operations", label: "Drivers", description: "Which driver drove which bus and model, multi-model drivers, Shift A / B, and energy performance per bus." },
   { id: "trials", module: "planning", label: "Trials", description: "Trial buses and operations, trial trip data, analysis, and promoting a trial bus to the fleet." },
   { id: "charging", module: "planning", label: "Charging", description: "Charging stations and chargers, and the charging-demand simulation." },
   { id: "maintenance", module: "maintenance", label: "Repair & Maintenance", description: "Work orders, preventive maintenance plans and what's due, downtime, availability and maintenance cost." },
@@ -67,6 +69,7 @@ export default function PtManagement({ user }: { user: User }) {
 
       {status?.connected && current.id === "fleet" && <Fleet user={user} />}
       {status?.connected && current.id === "operations" && <Operations user={user} />}
+      {status?.connected && current.id === "drivers" && <Drivers />}
       {status?.connected && current.id === "trials" && <Trials user={user} />}
       {status?.connected && current.id === "charging" && <Charging user={user} />}
       {status?.connected && current.id === "maintenance" && <Maintenance user={user} />}

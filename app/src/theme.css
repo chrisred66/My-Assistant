@@ -287,6 +287,8 @@ h3 {
    sideways past the page's max-width; .content's overflow clips it to the content area). */
 .sticky-head {
   background: color-mix(in srgb, var(--page) 90%, transparent);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
   box-shadow: 0 0 0 100vmax color-mix(in srgb, var(--page) 90%, transparent);
   clip-path: inset(0 -100vmax);
   border-bottom-color: transparent;
@@ -900,4 +902,181 @@ label.check input {
 }
 .live-head {
   display: none;
+}
+
+
+/* ---- Daily Feed ---- */
+.feed-topics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.feed-topic {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 6px 5px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--accent-soft);
+  font-size: 0.9rem;
+}
+.feed-topic.pending {
+  background: var(--wash);
+  border-style: dashed;
+}
+.feed-topic .link-btn {
+  font-size: 1rem;
+  line-height: 1;
+  padding: 0 4px;
+}
+.feed-items {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+.feed-item {
+  display: grid;
+  grid-template-columns: 32px 1fr;
+  gap: 10px;
+  padding: 12px 4px;
+  border-bottom: 1px solid var(--grid);
+}
+.feed-item:last-child {
+  border-bottom: none;
+}
+.feed-rank {
+  font-family: var(--font-display);
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: var(--accent);
+  text-align: center;
+}
+.feed-title {
+  font-weight: 600;
+  font-size: 1rem;
+  color: var(--text);
+  text-decoration: none;
+}
+.feed-title:hover {
+  color: var(--accent);
+  text-decoration: underline;
+}
+.feed-summary {
+  margin: 0;
+  color: var(--text-2);
+  font-size: 0.92rem;
+  line-height: 1.5;
+}
+.feed-verified {
+  color: var(--good, #16a34a);
+  cursor: help;
+  white-space: nowrap;
+}
+
+
+/* ---- Daily Feed: feeds as tabs in the sticky header ---- */
+.feed-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.feed-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px;
+  border-radius: 10px;
+  border-bottom: 3px solid transparent;
+  text-align: left;
+}
+.feed-tab.on {
+  border-bottom-color: var(--accent);
+  background: var(--accent-soft);
+  box-shadow: var(--glow);
+}
+.feed-tab-title {
+  font-weight: 600;
+  line-height: 1.3;
+}
+.feed-tab.zh {
+  margin-left: -4px; /* belongs to the topic tab before it */
+}
+.feed-rebuild {
+  margin-left: auto;
+  align-self: center;
+}
+.feed-tab-count {
+  min-width: 1.6em;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 0.75rem;
+  text-align: center;
+}
+@media (max-width: 760px) {
+  .feed-tabs {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+  }
+  .feed-tab {
+    flex: none;
+  }
+}
+
+
+/* ---- Daily Feed: Chinese news ---- */
+.feed-zh {
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  line-height: 1.5;
+  color: var(--muted);
+  background: transparent;
+}
+.feed-zh.on {
+  color: var(--accent-ink);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.feed-original {
+  color: var(--text-2);
+  font-size: 0.9rem;
+}
+.feed-lang {
+  display: inline-block;
+  padding: 0 6px;
+  margin-right: 4px;
+  border-radius: 6px;
+  font-size: 0.72rem;
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  vertical-align: 1px;
+}
+
+
+/* ---- Daily Feed: sections, key points, outlets ---- */
+.feed-section + .feed-section {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--border-strong);
+}
+.feed-section-title {
+  margin: 4px 0 2px;
+}
+.feed-points {
+  margin: 2px 0 0;
+  padding-left: 18px;
+  color: var(--text-2);
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+.feed-sources {
+  color: var(--muted);
+}
+.feed-sources .link-btn {
+  margin-left: 4px;
 }

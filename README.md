@@ -1,29 +1,37 @@
 # chrisManager
 
-The desktop app is called **My Assistant**. Personal toolkit: PT Management (Green Bus Assessment), audio recording, Arabic → English transcription/translation, data analysis,
-and token-usage tracking across Claude, OpenAI and DeepSeek. Also a desktop usage ball and a desktop pet
-(蓝色小肥鱼, the blue-haired maid by [PC2005-cloud](https://github.com/PC2005-cloud/dsh-pet); see
-[Credits and sources](#credits-and-sources)).
+A personal toolkit. The desktop app is called **My Assistant**.
+
+- **PT Management**: the Green Bus Assessment toolkit for an electric and hydrogen bus fleet: fleet, operations,
+  drivers, trials, charging, and repair & maintenance.
+- **Daily Feed**: the top verified news of the past 24 hours on your topics, built every morning at 8:00, with an
+  optional Chinese-language feed.
+- **General Tool**: translation, recording with live transcription and translation, meetings with speaker labels,
+  and transcripts that learn from your corrections.
+- **Usage**: tokens and cost across Claude, OpenAI, DeepSeek and Claude Code, with provider sync and balances.
+- **Desktop companions**: an always-on-top usage ball, and a desktop pet (蓝色小肥鱼 by
+  [PC2005-cloud](https://github.com/PC2005-cloud/dsh-pet); see [Credits and sources](#credits-and-sources)).
 
 ```
 Phone / laptop app ──(Tailscale)──► always-on desktop
                                      ├─ server/  PHP API (Apache, XAMPP)
-                                     │    └─ AI relay: holds API keys, logs every call's tokens
-                                     ├─ MySQL / MariaDB (localhost only)
-                                     └─ server/storage/recordings (audio files)
+                                     │    └─ AI relay: holds the API keys, logs every call's tokens
+                                     ├─ MariaDB (localhost only): chrismanager + gba_database (PT data)
+                                     └─ server/storage/ (recordings, caches)
 ```
 
 | Folder | What |
 |---|---|
-| `server/` | PHP 8.2 API: auth, AI relay, usage, recordings |
-| `server/database/migrations/` | Numbered SQL files, applied by `bin/migrate.php` |
-| `app/` | Tauri 2 desktop client (React + TypeScript); see `app/README.md` |
+| `server/` | PHP 8.2 JSON API: auth, AI relay, usage, recordings, Daily Feed, PT Management |
+| `server/database/migrations/` | App database schema, numbered SQL files applied by `bin/migrate.php` |
+| `server/database/gba-migrations/` | Fixes and additions to the PT database's schema (also applied by `bin/migrate.php`) |
+| `server/bin/` | Command-line scripts (below) |
+| `app/` | Tauri 2 desktop client (React 19 + TypeScript); see [app/README.md](app/README.md) |
 
 ## Setting up a dev machine
 
-Needs: XAMPP (PHP 8.2+, MariaDB), Composer, Git. In `C:\xampp\php\php.ini`, enable
-`extension=zip` and `extension=intl` (intl lets `APP_TIMEZONE=system` follow the Windows timezone),
-then restart Apache.
+Needs XAMPP (PHP 8.2+, MariaDB), Composer and Git. In `C:\xampp\php\php.ini`, enable `extension=zip` and
+`extension=intl` (intl lets `APP_TIMEZONE=system` follow the Windows timezone), then restart Apache.
 
 1. Clone into `htdocs`: `git clone <repo-url> C:\xampp\htdocs\chrisManager`
 2. Install dependencies:
@@ -31,14 +39,15 @@ then restart Apache.
    cd C:\xampp\htdocs\chrisManager\server
    composer install
    ```
-3. Create the database and a dedicated user (in phpMyAdmin's SQL tab or `mysql -u root -p`):
+3. Create the database and a dedicated user (phpMyAdmin's SQL tab, or `mysql -u root -p`):
    ```sql
    CREATE DATABASE chrismanager_dev CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
    CREATE USER 'chrismanager'@'localhost' IDENTIFIED BY 'choose-a-strong-password';
    GRANT ALL PRIVILEGES ON chrismanager_dev.* TO 'chrismanager'@'localhost';
+   GRANT ALL PRIVILEGES ON gba_database.* TO 'chrismanager'@'localhost';
    ```
-4. `copy .env.example .env`, then fill in `DB_PASS` and whichever API keys you use.
-5. Run the migrations and create your login:
+4. `copy .env.example .env`, then fill in `DB_PASS` and the API keys you use (each setting is explained in the file).
+5. Run the migrations and create your login (the first account is the Super Admin):
    ```
    C:\xampp\php\php.exe bin\migrate.php
    C:\xampp\php\php.exe bin\create-user.php you@example.com
@@ -46,58 +55,203 @@ then restart Apache.
 6. Check it: <http://localhost/chrisManager/server/public/health> should return `{"ok":true,...}`.
 
 Dev machines use `chrismanager_dev` with test data. Only the always-on desktop uses the real `chrismanager` database.
+For PT Management, import `gba_database` from an export of the ptManagement machine (the app shows a guide while it's
+missing).
 
 ## The always-on desktop (production)
 
-1. Same steps as above, but with `DB_NAME=chrismanager`, `APP_ENV=production` and `APP_DEBUG=false`.
+1. Same steps as above, with `DB_NAME=chrismanager`, `APP_ENV=production` and `APP_DEBUG=false`.
 2. XAMPP Control Panel → tick **Service** for Apache and MySQL so they start at boot.
-3. Set a MySQL root password, and keep MySQL bound to localhost (`bind-address=127.0.0.1` in `my.ini`).
+3. Set a MySQL root password and keep MySQL on localhost (`bind-address=127.0.0.1` in `my.ini`).
 4. Install [Tailscale](https://tailscale.com) on the desktop, laptop and phone. The app then reaches
    `http://<desktop-tailscale-name>/chrisManager/server/public`. Don't port-forward on the router.
 5. Windows Update → set active hours. BIOS → "restore on AC power loss".
-6. **Backups** (Task Scheduler, nightly):
-   ```
-   C:\xampp\mysql\bin\mysqldump.exe -u chrismanager -p<pass> chrismanager > D:\backups\chrismanager-%date:~0,4%%date:~5,2%%date:~8,2%.sql
-   ```
-   Also copy `server\storage\recordings` and keep a copy off the machine.
 
-Deploying an update: `git pull`, then `composer install`, then `php bin\migrate.php`.
+Deploying an update: `git pull`, `composer install`, then `php bin\migrate.php`.
 
-## API
+### Scheduled tasks (Task Scheduler)
 
-Every call except `/health` and `/auth/login` needs `Authorization: Bearer <token>`.
+| When | Command | Does |
+|---|---|---|
+| Daily 08:00 ("My Assistant Daily Feed") | `C:\xampp\php\php-win.exe C:\xampp\htdocs\chrisManager\server\bin\daily-feed.php` | Builds everyone's Daily Feed (skips feeds already built) |
+| Nightly | `C:\xampp\php\php.exe C:\xampp\htdocs\chrisManager\server\bin\sync-usage.php 3` | Pulls the last 3 days of usage and billed cost from Anthropic and OpenAI |
+| Nightly | `C:\xampp\mysql\bin\mysqldump.exe -u chrismanager -p<pass> chrismanager > D:\backups\chrismanager-%date:~0,4%%date:~5,2%%date:~8,2%.sql` | Database backup (also back up `gba_database`) |
 
-| Method | Path | Body / query | Does |
-|---|---|---|---|
-| GET | `/health` | | Liveness check |
-| POST | `/auth/login` | `{email, password, device}` | Returns a per-device token |
-| POST | `/auth/logout` | | Revokes the current token |
-| POST | `/auth/profile` | `{display_name}` | Sets your own display name (empty: show your login) |
-| GET | `/auth/me` | | Current user |
-| GET | `/ai/routing` | | Which provider and model handle translation, transcription and light tasks |
-| POST | `/ai/translate` | `{text, model?}` | Arabic text → English (Claude), saved and token-logged |
-| POST | `/live` | `{title?, recorded_at?}` | Starts a live recording; returns `recording_id`, `transcript_id` |
-| POST | `/live/{id}/chunk` | multipart `audio` (short clip), `seq`, `start_ms?`, `prompt?` | Transcribes one chunk (language auto-detected) and translates it unless English; returns `text`, `language`, `english` |
-| POST | `/live/{id}/finish` | multipart `audio` (whole recording), `duration_sec?` | Saves the audio and returns the assembled transcript |
-| POST | `/recordings` | multipart `audio`, `title?`, `recorded_at?`, `transcribe=1?` | Stores an audio file; with `transcribe`, also transcribes it and translates non-English speech. A failed step comes back as `transcribe_error` / `translate_error`; the file is kept |
-| POST | `/recordings/{id}/transcribe` | | Re-transcribes a saved recording as a whole (replaces its text and clears the translation) |
-| GET | `/recordings` | | Latest 200 recordings with transcript, detected `language` and English |
-| GET | `/transcripts` | | Latest 200 transcripts (`translated_text` is null when English or not yet translated) |
-| POST | `/transcripts/{id}/translate` | `{model?}` | Translates a saved transcript to English (no-op if English) |
-| GET | `/usage/summary` | `?from=YYYY-MM-DD&to=YYYY-MM-DD&group=day\|month\|model&view=providers\|app` | Token totals and cost: everything the providers report (default) or this app only |
-| GET | `/usage/providers` | | Sync status per provider, DeepSeek balance |
-| POST | `/usage/sync` | `{from?, to?}` | Pulls usage and billed cost from Anthropic and OpenAI (default: last 31 days) |
-| POST | `/usage` | `{provider, model, input_tokens, output_tokens, note?, occurred_at?}` | Manual usage entry |
+Also copy `server\storage\recordings` somewhere off the machine.
 
-**AI routing** is fixed on the server, not chosen by the app:
+### Other scripts
+
+| Script | Does |
+|---|---|
+| `bin/migrate.php` | Applies new migrations to both databases |
+| `bin/create-user.php <email>` | Creates an account (the first one is the Super Admin) |
+| `bin/backfill-deepseek-cost.php [--reprice]` | Prices DeepSeek calls logged without a cost (`--reprice`: all of them again) |
+
+## Users and roles
+
+People sign in with a username or email. Settings → Users manages accounts.
+
+| Group | General Tool | PT Management | Daily Feed | Usage, ball, pet | Manages users |
+|---|---|---|---|---|---|
+| Super Admin (first account) | ✓ | everything | one feed per topic | ✓ | everyone |
+| Admin | ✓ | everything | one feed per topic | – | users below Admin |
+| Paid User | ✓ (incl. meetings, learning from edits) | – | one feed per topic, earlier days | – | – |
+| Free User | record (audio only), 10 Translate requests a day | – | one combined feed, today only | – | – |
+| PT Big Man | as Free, unless given Paid | all modules, full rights | as their plan | – | – |
+| PT Manager | as Free, unless given Paid | own module: add, edit, close, delete, settings | as their plan | – | – |
+| PT Low Man | as Free, unless given Paid | own module: view and add | as their plan | – | – |
+
+- PT modules: **Operations** (Operations, Drivers), **Maintenance** (Repair & Maintenance) and **Planning** (Fleet,
+  Trials, Charging). The General Tool plan and the PT role are set separately, so someone can be a Paid User and a
+  Maintenance Manager.
+- People act in **one role at a time**. With several roles they pick one after signing in and switch from the sidebar
+  ("Acting as"); the server enforces the active role. The Super Admin has every role, which also shows exactly what
+  each group sees.
+- The Super Admin can **view as** another account (button next to their name): the app shows that account's pages and
+  data, without signing in as it.
+
+## AI providers
+
+The server holds the API keys; the app never chooses a provider. Every call's tokens are logged to `token_usage`.
 
 | Job | Provider | Setting |
 |---|---|---|
-| Translation (Translate page, live chunks, files) | Claude | `TRANSLATE_PROVIDER=anthropic` |
-| Transcription (speech → text) | OpenAI | `OPENAI_TRANSCRIBE_MODEL` (OpenAI is the only speech-to-text integration) |
-| Light tasks (e.g. language detection) | DeepSeek | `LIGHT_PROVIDER=deepseek` |
+| Translation | Claude | `TRANSLATE_PROVIDER`, `ANTHROPIC_MODEL` |
+| Transcription (speech → text) | OpenAI | `OPENAI_TRANSCRIBE_MODEL` |
+| Meetings (speaker labels) | OpenAI | `OPENAI_DIARIZE_MODEL` |
+| Light tasks (e.g. language detection) | DeepSeek | `LIGHT_PROVIDER`, `DEEPSEEK_MODEL` |
+| Learning from transcript edits | DeepSeek for Chinese, OpenAI for other languages | `OPENAI_CHAT_MODEL` |
+| Daily Feed: searches, ranking | DeepSeek | |
+| Daily Feed: summaries | DeepSeek for Chinese stories, OpenAI for the rest | `OPENAI_CHAT_MODEL` |
+| PT charging schedule | DeepSeek | |
 
-In `/usage`, `provider` is `anthropic`, `openai` or `deepseek`.
+The Usage page shows this table too (Super Admin).
+
+### Usage and costs
+
+The Usage page's **All provider usage** view shows what the providers report, not just this app's calls:
+
+| Provider | Usage comes from | Balance | Needs |
+|---|---|---|---|
+| Anthropic | Usage & Cost Admin API (daily tokens per model, billed cost) | no API: link to the billing page | `ANTHROPIC_ADMIN_KEY` (`sk-ant-admin…`; Console → Settings → Admin keys; organizations only) |
+| OpenAI | Usage + Costs API (tokens, transcription seconds, billed cost) | no API: link to the billing page | `OPENAI_ADMIN_KEY` (platform.openai.com → Settings → Organization → Admin keys) |
+| DeepSeek | No usage API: this app's own calls | live from DeepSeek's API | `DEEPSEEK_API_KEY` |
+| Claude Code | This computer's Claude Code logs (tokens only; subscription, no cost) | – | – |
+
+Sync with the **Sync** button on the Usage page or the nightly task. Synced rows already include this app's calls, so
+the two are never added together. Billed costs are used as reported; elsewhere cost is estimated from `model_prices`
+(USD per million tokens). Anthropic and DeepSeek prices are seeded; add rows for the OpenAI models you use. When a price
+changes, insert a row with a later `effective_from` instead of editing the old one, so past costs stay correct.
+
+DeepSeek charges half outside peak hours (peak = 01:00–04:00 and 06:00–10:00 UTC on weekdays, except mainland China's
+public holidays). `model_prices` holds the peak rates, and each DeepSeek call is priced for its time when it's logged.
+Holiday dates come from the open [holiday-cn](https://github.com/NateScarlet/holiday-cn) dataset (built from the State
+Council's notices), cached in `server/storage/cn-holidays/`.
+
+## PT Management notes
+
+- The PT data lives in its own database, `gba_database` (`GBA_DB_NAME`; `GBA_DB_USER` / `GBA_DB_PASS` if it needs a
+  different MySQL user). `bin/migrate.php` keeps its schema up to date from `database/gba-migrations/`, tracked in that
+  database's own `schema_migrations` table.
+- Trip energy is kWh for battery buses and kg of hydrogen for fuel-cell buses, so the two are always reported
+  separately. Consumption is total energy ÷ total distance; trips with an impossible distance (≤ 0 or over 500 km) are
+  left out and listed as exceptions.
+- Consumption is also split by season: hot (June–September, the Abu Dhabi summer, heavy air-conditioning load) and
+  mild (October–May).
+- **Shifts** aren't recorded, so each bus's day is split into Shift A (morning) and Shift B (evening) at the change of
+  driver nearest mid-day; with no change, its trips are split in half; a bus with a single trip goes by start time.
+- Trip files (.csv or .xlsx) need the columns Date, Driver ID, Bus ID, Route, Start Time, End Time, Start KM, End KM,
+  Start SOC, End SOC (any order and spacing). Costs are labelled in `PT_CURRENCY` (default AED).
+
+## API
+
+Base address: `http://<server>/chrisManager/server/public`. Every call except `/health` and `/auth/login` needs
+`Authorization: Bearer <token>`. Responses are JSON.
+
+**Accounts**
+
+| Method | Path | Does |
+|---|---|---|
+| GET | `/health` | Liveness check |
+| POST | `/auth/login` | `{email (or username), password, device}` → a per-device token |
+| POST | `/auth/logout` | Revokes the current token |
+| GET | `/auth/me` | Current user, `roles`, `active_role` and `access` (what the account can do) |
+| POST | `/auth/role` | `{role}`: switches the active role |
+| POST | `/auth/profile` · `/auth/password` | Sets your display name · changes your password |
+| GET · POST | `/users` · `/users/{id}` | Lists, creates and edits accounts (Super Admin and Admin) |
+
+**General Tool**
+
+| Method | Path | Does |
+|---|---|---|
+| POST | `/ai/translate` | `{text}`: Arabic → English, saved as a transcript |
+| POST | `/live`, `/live/{id}/chunk`, `/live/{id}/finish` | Live recording: start, transcribe and translate each short chunk, save the audio |
+| POST | `/recordings` | Multipart `audio`, `title?`, `transcribe=1?`: stores a recording, optionally transcribed and translated |
+| GET | `/recordings` | Your latest 200 recordings with transcript and English |
+| POST · DELETE | `/recordings/{id}` | Renames · deletes a recording and its audio |
+| POST | `/recordings/{id}/transcribe` | Transcribes a saved recording again |
+| GET | `/transcripts` | Your latest 200 transcripts |
+| POST · DELETE | `/transcripts/{id}` | Edits · deletes a transcript |
+| POST | `/transcripts/{id}/translate` | Translates a transcript to English |
+| POST | `/transcripts/learn` | Learns from your corrections (paid) |
+| GET · POST | `/transcripts/habits` | The learned rules; remove one or forget a language |
+| POST | `/meetings`, `/meetings/{id}/chunk`, `/meetings/{id}/translate` | Meeting recording with speaker labels (paid) |
+| GET · POST | `/meetings/{id}/speakers` | Speakers and their names |
+
+**Daily Feed**
+
+| Method | Path | Does |
+|---|---|---|
+| GET | `/feed` | `?date=`: that day's feeds (earlier days on the paid plan) |
+| GET · POST | `/feed/topics` | Your topics · adds one (starts with tomorrow's feed) |
+| POST · DELETE | `/feed/topics/{id}` | `{include_zh}`: Chinese news on or off · stops following |
+| GET | `/feed/status` | Whether today's feed is ready |
+| POST | `/feed/generate` | Builds today's feed now (`force` rebuilds it; Super Admin) |
+
+**Usage** (Super Admin)
+
+| Method | Path | Does |
+|---|---|---|
+| GET | `/ai/routing` | Which provider and model does each job |
+| GET | `/usage/summary` | `?from&to&group=day\|month\|model&view=providers\|app`: tokens and cost |
+| GET | `/usage/providers` | Sync status per provider and DeepSeek's balance |
+| POST | `/usage/sync` | `{from?, to?}`: pulls usage and billed cost from Anthropic and OpenAI |
+| POST | `/usage` | `{provider, model, input_tokens, output_tokens, note?, occurred_at?}`: manual entry |
+
+**PT Management** (each needs the module's level: view to read, add to add, manage to change, close or delete)
+
+| Method | Path | Does |
+|---|---|---|
+| GET | `/pt/status` | Whether `gba_database` is reachable, with row counts |
+| GET · POST | `/pt/manufacturers` | Manufacturers with models and bus counts · adds one |
+| GET · DELETE | `/pt/manufacturers/{key}` | One manufacturer's models and buses · archives it with its models and buses |
+| POST · DELETE | `/pt/models` · `/pt/models/{id}` | Adds a model (id `MANUFACTURER_MODEL_YEAR`) · archives one with no buses |
+| POST | `/pt/buses` | `{model_id, bus_id?, plate?}`: adds a bus (`bus_id` is the fleet number in trip logs) |
+| POST · DELETE | `/pt/buses/{id}` | Sets the plate · archives the bus (trips are kept) |
+| GET | `/pt/trips/options` | Data date range, buses, routes, exception types and thresholds |
+| GET | `/pt/operations` | `?from&to&bus?&route?&energy?`: KPIs, trends, per bus and route (with hot / mild season), exceptions |
+| GET | `/pt/trips` | Same filters plus `issue?&limit&offset`: trips with their issue codes |
+| POST | `/pt/trips/upload` | Multipart `file`, `action=preview\|import`, `date_order=dmy\|mdy?`: trip-log upload |
+| POST | `/pt/trips` | Manual trip entry |
+| GET · POST | `/pt/trips/duplicates` · `/pt/trips/duplicates/{id}` | Conflicting uploaded trips · `{action: keep\|replace}` |
+| GET | `/pt/drivers` | `?from&to`: each driver per bus (trips, shifts, consumption by season) and per driver |
+| GET · POST | `/pt/trials` · `/pt/trials/{id}` | Trials with trip figures · adds or updates one |
+| GET · POST | `/pt/trial-buses` | Trial buses · adds one |
+| POST | `/pt/trial-buses/{id}/promote` | `{fleet_bus_id, plate?}`: adds the trial bus to the fleet |
+| GET | `/pt/charging/assets` | Stations → chargers → guns |
+| POST | `/pt/charging/stations` · `/pt/charging/chargers` | Adds a station · a charger |
+| DELETE | `/pt/charging/stations/{id}` · `/pt/charging/stations/{sid}/chargers/{cid}` | Removes one (a station only when empty) |
+| GET | `/pt/charging/demand` · `/pt/charging/history` | One day's energy per electric bus · a typical day from recent trips |
+| POST | `/pt/charging/ai-schedule` | DeepSeek charging schedule for the simulation |
+| GET | `/pt/maintenance/options` | Buses with odometer, types, categories, statuses, plans, currency |
+| GET · POST | `/pt/maintenance` | `?from&to&bus?&type?&category?&status?`: work orders and dashboard · adds one |
+| POST · DELETE | `/pt/maintenance/{id}` | Updates · deletes a work order |
+| POST | `/pt/maintenance/{id}/close` · `/reopen` | Closes a work order when the workshop reports back · reopens it |
+| POST | `/pt/maintenance/import` | Work orders from an Access export (.xlsx or .csv), with preview |
+| GET · POST | `/pt/maintenance/plans` · `/pt/maintenance/plans/{id}` | Preventive plans and what's due · adds one, pauses or resumes it |
+| DELETE | `/pt/maintenance/plans/{id}` | Deletes a plan no work order uses |
+
+The Operations endpoints work on trial trips with `dataset=trial` (and `trial=ID` for one trial).
 
 Quick test from PowerShell:
 ```powershell
@@ -105,111 +259,8 @@ $base = "http://localhost/chrisManager/server/public"
 $login = Invoke-RestMethod "$base/auth/login" -Method Post -ContentType "application/json" `
   -Body '{"email":"you@example.com","password":"...","device":"pc"}'
 $h = @{ Authorization = "Bearer $($login.token)" }
-Invoke-RestMethod "$base/ai/translate" -Method Post -Headers $h -ContentType "application/json; charset=utf-8" `
-  -Body ([Text.Encoding]::UTF8.GetBytes('{"text":"مرحبا، كيف حالك؟"}'))
 Invoke-RestMethod "$base/usage/summary?group=model" -Headers $h
 ```
-
-## Users and PT Management
-
-- **User groups** (Settings → Users; people sign in with a username or email):
-
-  | Group | General Tool | PT Management | Usage + desktop ball | Manage users |
-  |---|---|---|---|---|
-  | Super Admin (first account) | ✓ | everything | ✓ | everyone |
-  | Admin | ✓ | everything | – | users below Admin |
-  | Free User | record (audio only) + 10 Translate requests a day; no transcription | – | – | – |
-  | Paid User | ✓ | – | – | – |
-  | PT Big Man | as Free (unless given Paid) | all modules, full rights | – | – |
-  | PT Manager | as Free (unless given Paid) | own module: add, edit, close, delete, settings | – | – |
-  | PT Low Man | as Free (unless given Paid) | own module: view and add | – | – |
-
-  PT modules: Operations, Maintenance (Repair & Maintenance), Planning (Fleet, Trials, Charging). An account has a
-  General Tool plan and a PT role separately, so someone can be e.g. a Paid User and a Maintenance Manager. The free
-  plan saves recordings as audio only (no transcription) and allows 10 Translate requests a day. Recordings and
-  transcripts are per person.
-- **Roles:** people act in one role at a time. With several (e.g. Paid User and Maintenance Manager) they pick one
-  after signing in and switch from the sidebar; the Super Admin has every role, which is also a way to see exactly
-  what each group sees. The server enforces the active role. `POST /auth/role` `{role}` switches; `/auth/me` lists
-  `roles` and `active_role`.
-- **PT Management** is the Green Bus Assessment toolkit, ported from the standalone `ptManagement`
-  app. Its data stays in its own database, `gba_database` (set `GBA_DB_NAME` to change it), which
-  the app reaches with the same MySQL user unless `GBA_DB_USER` / `GBA_DB_PASS` are set:
-  ```sql
-  GRANT ALL PRIVILEGES ON gba_database.* TO 'chrismanager'@'localhost';
-  ```
-
-PT endpoints (each needs the module's level: view to read, add to add data, manage to change, close or delete):
-
-| Method | Path | Body | Does |
-|---|---|---|---|
-| GET | `/pt/status` | | Whether `gba_database` is reachable, and row counts |
-| GET | `/pt/manufacturers` | | Manufacturers with their models and bus counts |
-| GET | `/pt/manufacturers/{key}` | | One manufacturer: model specs, buses with trip count and last trip |
-| POST | `/pt/manufacturers` | `{manufacturer, display_name?, category}` | Adds a manufacturer (key: letters, digits, `_`, `-`) |
-| POST | `/pt/models` | `{manufacturer, model, model_year, bus_type, energy_source, bus_length, …specs}` | Adds a model; id is `MANUFACTURER_MODEL_YEAR` |
-| POST | `/pt/buses` | `{model_id, bus_id?, plate?}` | Adds a bus (`bus_id` is the fleet number used in trip logs) |
-| POST | `/pt/buses/{id}` | `{plate}` | Sets a bus's plate |
-| DELETE | `/pt/buses/{id}` | | Archives the bus to `removed_bus_db` (trips are kept) |
-| DELETE | `/pt/models/{id}` | | Archives a model with no buses |
-| DELETE | `/pt/manufacturers/{key}` | | Archives the manufacturer with all its models and buses |
-| GET | `/pt/trips/options` | | Data date range, buses, routes, exception types and thresholds |
-| GET | `/pt/operations` | `?from&to&bus?&route?&energy?` | KPIs, daily trend, per bus, per route, exception counts, SOC-drop bands |
-| GET | `/pt/trips` | same, plus `issue? (code or any)&limit&offset` | Trips with their issue codes, newest first |
-| POST | `/pt/trips/upload` | multipart `file` (.csv/.xlsx), `action=preview\|import`, `date_order=dmy\|mdy?` | Preview or save a trip-log file |
-| POST | `/pt/trips` | `{date, driver_id, bus_id, route, trips: [{start_time, end_time, start_km, end_km, start_soc, end_soc}]}` | Manual trip entry |
-| GET | `/pt/trips/duplicates` | | Uploaded trips that conflict with saved ones |
-| POST | `/pt/trips/duplicates/{id}` | `{action: keep\|replace}` | Resolve a conflict (admin) |
-
-| GET | `/pt/trials` · `/pt/trial-buses` | | Trials (with trip figures) and trial buses |
-| POST | `/pt/trials` | `{trial_name, trial_bus_id, route?, start_date, end_date?, load_condition?, notes?}` | New trial |
-| POST | `/pt/trials/{id}` | any of `{status, end_date, route, load_condition, notes}` | Update a trial |
-| POST | `/pt/trial-buses` | `{bus_id (label), model_id, notes?}` | New trial bus |
-| POST | `/pt/trial-buses/{id}/promote` | `{fleet_bus_id, plate?}` | Adds the trial bus to the fleet |
-| GET | `/pt/charging/assets` | | Stations → chargers → guns |
-| POST | `/pt/charging/stations` · `/pt/charging/chargers` | `{station_name}` · `{station_id, charger_id, gun_count, charger_output, one_gun_output, two_gun_output?, output_type?, location?}` | Add charging assets |
-| DELETE | `/pt/charging/stations/{id}` · `/pt/charging/stations/{sid}/chargers/{cid}` | | Remove (admin; a station only when empty) |
-| GET | `/pt/charging/demand` | `?date=` (default: latest normal service day) | Each electric bus's energy used and last trip end that day |
-
-| GET | `/pt/maintenance/options` | | Fleet buses with odometer, types, systems, statuses, plans, currency |
-| GET | `/pt/maintenance` | `?from&to&bus?&type?&category?&status?` | Work orders (plus all open ones) and dashboard figures |
-| POST | `/pt/maintenance` · `/pt/maintenance/{id}` | `{bus_id, type, category, title, reported_date, status?, priority?, completed_date?, odometer_km?, downtime_hours?, labour_hours?, parts_cost?, labour_cost?, workshop?, plan_id?, description?}` | Add / update a work order |
-| GET | `/pt/maintenance/plans` | | Preventive plans and each bus's due status |
-| POST | `/pt/maintenance/plans` · `/pt/maintenance/plans/{id}` | `{name, category, model_id?, interval_km?, interval_days?, notes?}` · `{active}` | Add a plan / pause or resume it |
-| DELETE | `/pt/maintenance/{id}` · `/pt/maintenance/plans/{id}` | | Delete (admin; a plan only when no work order uses it) |
-
-The Operations endpoints (`/pt/trips/options`, `/pt/operations`, `/pt/trips`, upload and manual entry) work on
-trial trips with `dataset=trial` (and `trial=ID` to pick one trial).
-
-`php bin/migrate.php` also brings the PT database's schema up to date from `database/gba-migrations/`
-(fixes to the imported ptManagement schema), tracked in that database's own `schema_migrations` table.
-
-Trip energy is kWh for battery buses and kg of hydrogen for fuel-cell buses (`energy_capacity × SOC drop`),
-so the two are always reported separately. Trip files need the columns Date, Driver ID, Bus ID, Route,
-Start Time, End Time, Start KM, End KM, Start SOC, End SOC (any order and spacing).
-
-## Usage from the providers
-
-The Usage page's **All provider usage** view shows what the providers themselves report, not just
-this app's calls:
-
-| Provider | Source | Needs |
-|---|---|---|
-| Anthropic | Usage & Cost Admin API: daily tokens per model, billed cost | `ANTHROPIC_ADMIN_KEY` (an `sk-ant-admin...` key; Console → Settings → Admin keys; organizations only, not individual accounts) |
-| OpenAI | Usage + Costs API: tokens, transcription seconds, billed cost | `OPENAI_ADMIN_KEY` (platform.openai.com → Settings → Organization → Admin keys) |
-| DeepSeek | No usage-history API: only the balance is shown; usage comes from this app | `DEEPSEEK_API_KEY` |
-
-Sync with the **Sync** button on the Usage page, or nightly with Task Scheduler:
-```
-C:\xampp\php\php.exe C:\xampp\htdocs\chrisManager\server\bin\sync-usage.php 3
-```
-Synced rows already include this app's calls, so the two are never added together.
-
-## Token-usage costs
-
-Costs come from the `model_prices` table (USD per million tokens). Anthropic prices are seeded.
-Add rows for the OpenAI and DeepSeek models you use. When a price changes, insert a new row with
-a later `effective_from` instead of editing the old one, so past costs stay correct.
 
 ## Credits and sources
 
@@ -222,14 +273,16 @@ terms apply there. This project's own code doesn't change those terms.
 | 蓝色小肥鱼 / Q版蓝发小女仆: character and 106 animation clips (the pet's animation pack) | [PC2005-cloud](https://github.com/PC2005-cloud) | Original: <https://github.com/PC2005-cloud/dsh-pet>; clips taken from [Refining-colors/pet-with-you](https://github.com/Refining-colors/pet-with-you) | Open-source use allowed, **no commercial use**; derivative / re-skinned works must link the original repository <https://github.com/PC2005-cloud/dsh-pet> wherever they're shown |
 | 鲸鱼娘 standing art (optional "your images" pet look) | Original character 上善无形 (Bilibili); DeepSeek maid whale-girl design ZipZipPipe (Bilibili) | Via [EDMOK/blue-fish-archive](https://github.com/EDMOK/blue-fish-archive) (`原始立绘/deepseek_whale.png`), background removed and resized | [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/): credit, non-commercial, share adaptations alike |
 | Built-in whale (the pet without any pack or images) | This project | `app/src/components/Whale.tsx` | Same as this project |
+| Chinese public holiday dates (DeepSeek off-peak pricing) | [NateScarlet/holiday-cn](https://github.com/NateScarlet/holiday-cn) | Downloaded at run time, cached in `server/storage/cn-holidays/` | The project's MIT licence; the dates are from the State Council's notices |
 
-The app shows these credits and links in Settings → Desktop pet and in the pet's right-click menu. If you publish this
-project or a build of it, keep this section and don't bundle the third-party clips or images without following their
-terms.
+The app shows the pet credits and links in Settings → Desktop pet and in the pet's right-click menu. If you publish
+this project or a build of it, keep this section and don't bundle the third-party clips or images without following
+their terms.
 
 ## Rules
 
 - Never commit `.env` or API keys. Keep them in a password manager.
+- Never commit the pet's animation pack or images (`pet-pack/`, `pet-skin/`).
 - Never edit a migration that has already run. Add `00N_description.sql` instead.
 - `git pull` before you start, `git push` when you stop.
 - Record every change in `CHANGELOG.md` under **Unreleased**.

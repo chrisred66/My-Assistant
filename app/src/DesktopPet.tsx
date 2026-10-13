@@ -20,7 +20,7 @@ import { api, configureApi, PROVIDERS, SOURCE_LABELS, USAGE_SOURCES, type UsageS
 import { focusMain } from "./lib/ball";
 import { claudeCodeEntries, claudeCodeTotals, type InOut } from "./lib/claudeCode";
 import { formatCompact, toIsoDate } from "./lib/format";
-import { loadPack, loadSkin, petLook, petStays, savePetPosition, setPetEnabled, setPetStays, skinFacing, type LoadedPack, type PetLook, type PetSkin } from "./lib/pet";
+import { feedAnnounced, feedToAnnounce, loadPack, loadSkin, petLook, petStays, savePetPosition, setPetEnabled, setPetStays, skinFacing, type LoadedPack, type PetLook, type PetSkin } from "./lib/pet";
 import { getToken, loadSettings } from "./lib/settings";
 import "./DesktopPet.css";
 
@@ -57,7 +57,7 @@ export default function DesktopPet() {
   const [held, setHeld] = useState(false);
   const [activities, setActivities] = useState<Activity[]>([]);
   const [today, setToday] = useState<Today | null>(null);
-  const [bubble, setBubble] = useState<"usage" | "menu" | null>(null);
+  const [bubble, setBubble] = useState<"usage" | "menu" | "news" | null>(null);
   const [stay, setStay] = useState(false);
   const [now, setNow] = useState(Date.now());
   const [skin, setSkin] = useState<PetSkin>({});
@@ -124,6 +124,55 @@ export default function DesktopPet() {
     void petStays().then(setStay);
   }, []);
 
+  // The Daily Feed arrived (the main window's 8:00 watcher): announce it.
+  useEffect(() => {
+    // Also on start: the announcement may have gone out before this window was listening.
+    const announce = () =>
+      void feedToAnnounce().then((yes) => {
+        if (!yes) return;
+        setBubble("news");
+        setEvents((ev) => ({ ...ev, click: ev.click + 1 }));
+      });
+    announce();
+    const unlisten = listen("feed-ready", () => window.setTimeout(announce, 500));
+    return () => {
+      void unlisten.then((f) => f()).catch(() => {});
+    };
+  }, []);
+
+  // Click-through: the window is bigger than the character (room for whole animations), so outside her body (and
+  // her bubble) clicks go to whatever is behind. The cursor is checked a dozen times a second.
+  const hitBox = useRef({ w: 150, h: 128 });
+  useEffect(() => {
+    let ignoring: boolean | null = null;
+    let scale = 1;
+    void currentMonitor().then((m) => (scale = m?.scaleFactor || 1), () => {});
+    const t = window.setInterval(async () => {
+      try {
+        const [c, p, s] = await Promise.all([cursorPosition(), win.outerPosition(), win.outerSize()]);
+        const box = hitBox.current;
+        const x = c.x - p.x;
+        const y = c.y - p.y;
+        const inBody = Math.abs(x - s.width / 2) <= (box.w / 2) * scale && y >= s.height - box.h * scale && y <= s.height;
+        const inBubble = bubbleRef.current !== null && y < s.height - box.h * scale && x >= 0 && x <= s.width && y >= 0;
+        const ignore = !(inBody || inBubble || press.current !== null);
+        if (ignore !== ignoring) {
+          ignoring = ignore;
+          await win.setIgnoreCursorEvents(ignore);
+        }
+      } catch {
+        // window closing
+      }
+    }, 80);
+    return () => {
+      window.clearInterval(t);
+      void win.setIgnoreCursorEvents(false).catch(() => {});
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const bubbleRef = useRef(bubble);
+  bubbleRef.current = bubble;
+
   // Is the app in front a web browser? (Reported by the native full-screen watcher.)
   useEffect(() => {
     void invoke<{ browser: boolean }>("foreground_app").then((f) => setBrowsing(f.browser), () => {});
@@ -152,6 +201,8 @@ export default function DesktopPet() {
   const shown: "pack" | "images" | "whale" =
     look === "pack" && pack ? "pack" : look === "images" && hasSkin ? "images" : look === "whale" ? "whale" : pack ? "pack" : hasSkin ? "images" : "whale";
   shownRef.current = shown;
+  // The part of the window that's her (logical px, at the bottom centre): clicks elsewhere pass through.
+  hitBox.current = shown === "pack" ? { w: 190, h: 240 } : shown === "images" ? { w: 184, h: 200 } : { w: 150, h: 128 };
 
   // What the main window is doing; eat when an AI job finishes.
   useEffect(() => {
@@ -273,9 +324,12 @@ export default function DesktopPet() {
       const scale = monitor.scaleFactor || 1;
       const size = await win.outerSize();
       let pos = await win.outerPosition();
-      const minX = area.position.x;
-      const minY = area.position.y;
-      const maxX = area.position.x + area.size.width - size.width;
+      // The window is wider and taller than her: let its empty margins hang off-screen so she can reach the edges.
+      const padX = Math.max(0, size.width / 2 - (hitBox.current.w / 2 + 10) * scale);
+      const padTop = Math.max(0, size.height - (hitBox.current.h + 20) * scale);
+      const minX = area.position.x - padX;
+      const minY = area.position.y - padTop;
+      const maxX = area.position.x + area.size.width - size.width + padX;
       const maxY = area.position.y + area.size.height - size.height;
       const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 
@@ -353,7 +407,7 @@ export default function DesktopPet() {
         const { dx, dy } = best;
 
         // Behind the ball: the pet's body (about the middle of its window, a little low) just short of the disc.
-        const body = { x: size.width / 2, y: size.height * 0.62 };
+        const body = { x: size.width / 2, y: size.height - (hitBox.current.h / 2) * scale };
         const behind = (cx: number, cy: number) => ({
           x: clamp(cx - dx * (r + 62 * scale) - body.x, minX, maxX),
           y: clamp(cy - dy * (r + 30 * scale) - body.y + 16 * scale, minY, maxY),
@@ -534,6 +588,22 @@ export default function DesktopPet() {
             </span>
           ))}
           {current && <span className="pet-sub">Busy: {current.label}</span>}
+        </div>
+      )}
+      {bubble === "news" && (
+        <div className="pet-bubble pet-news">
+          <strong>Your Daily Feed is ready</strong>
+          <span className="pet-sub">Today's top stories on your topics</span>
+          <button
+            onClick={() => {
+              setBubble(null);
+              void feedAnnounced();
+              void emit("open-page", { page: "feed" });
+              void focusMain();
+            }}
+          >
+            Open Daily Feed
+          </button>
         </div>
       )}
       {bubble === "menu" && (

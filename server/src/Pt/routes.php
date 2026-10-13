@@ -21,3 +21,4 @@ require __DIR__ . '/operations.php';
 require __DIR__ . '/trials.php';
 require __DIR__ . '/charging.php';
 require __DIR__ . '/maintenance.php';
+require __DIR__ . '/drivers.php';

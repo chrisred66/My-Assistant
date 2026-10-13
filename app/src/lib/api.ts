@@ -190,6 +190,11 @@ export interface PtEnergyTotals {
   distance: number | null;
   energy_used: number | null;
   consumption: number | null; // per 100 km
+  /** Hot season (June–September) and the rest of the year. */
+  consumption_hot: number | null;
+  consumption_mild: number | null;
+  distance_hot: number | null;
+  distance_mild: number | null;
 }
 
 export interface PtOperations {
@@ -227,6 +232,8 @@ export interface PtOperations {
     distance: number;
     energy_used: number | null;
     consumption: number | null;
+    consumption_hot: number | null;
+    consumption_mild: number | null;
     avg_soc_drop: number | null;
     min_end_soc: number | null;
     exceptions: number;
@@ -239,11 +246,17 @@ export interface PtOperations {
     avg_trip_km: number | null;
     electric_per_100km: number | null;
     hydrogen_per_100km: number | null;
+    electric_hot: number | null;
+    electric_mild: number | null;
+    hydrogen_hot: number | null;
+    hydrogen_mild: number | null;
     avg_soc_drop: number | null;
   }[];
   exceptions: Record<string, number>;
   /** Per exception type: the buses it comes from, most affected first. */
   exception_buses: Record<string, { bus_id: number; label: string; trips: number }[]>;
+  /** Months counted as the hot season. */
+  hot_months: number[];
   soc_drop_bands: { band: number; trips: number }[];
 }
 
@@ -615,6 +628,53 @@ export interface MeetingTranslation {
   english: { seq: number; part: number; english: string | null }[];
 }
 
+/** Daily Feed (see server/src/Feed.php). */
+export interface FeedTopic {
+  id: number;
+  topic: string;
+  include_zh: number | boolean; // Chinese-language news too
+  effective_from: string; // first feed date that includes it
+}
+export interface FeedItem {
+  rank: number;
+  topic: string;
+  lang: string; // "en", or "zh" for a Chinese report (title is then the English translation)
+  title: string;
+  title_original: string | null; // the headline as published, when not English
+  summary: string | null; // a short paragraph, in the article's language
+  key_points: string[];
+  url: string;
+  publisher: string;
+  published_at: string | null;
+  sources: number; // outlets that reported it (2+ = verified)
+  source_list: string[];
+}
+export interface Feed {
+  id: number;
+  feed_key: string;
+  title: string;
+  topics: string[];
+  status: "ready" | "failed";
+  error: string | null;
+  created_at: string;
+  items: FeedItem[];
+}
+export interface FeedResponse {
+  date: string;
+  today: string;
+  plan: "combined" | "per_topic";
+  can_go_back: boolean; // earlier days' feeds (paid plan)
+  feeds: Feed[];
+  dates: string[];
+  topics: FeedTopic[];
+}
+export interface FeedStatus {
+  date: string;
+  ready: number;
+  topics_due: number;
+  after_8: boolean;
+}
+
 export interface Recording {
   id: number;
   kind: "recording" | "meeting";
@@ -807,6 +867,59 @@ function tripQuery(f: object): string {
   return q.toString();
 }
 
+/** One driver on one bus. km / energy_used count only trips with a usable distance and energy reading (valid_trips). */
+export interface PtDriverBus {
+  driver_id: string;
+  bus_id: string;
+  model_id: string | null;
+  model: string;
+  energy: string;
+  unit: "kWh" | "kg";
+  trips: number;
+  days: number;
+  a_trips: number;
+  b_trips: number;
+  km: number | null;
+  energy_used: number | null;
+  valid_trips: number;
+  /** Valid trips in the hot season (June–September) and in the rest of the year. */
+  hot: PtSeasonEnergy;
+  mild: PtSeasonEnergy;
+  first_date: string;
+  last_date: string;
+}
+
+export interface PtSeasonEnergy {
+  km: number;
+  energy_used: number;
+  valid_trips: number;
+}
+
+/** One driver across all buses. Each bus-day is split at the driver handover (else in half; a lone trip by start time). */
+export interface PtDriverShift {
+  driver_id: string;
+  trips: number;
+  days: number;
+  a_trips: number;
+  b_trips: number;
+  a_days: number;
+  b_days: number;
+  first_date: string;
+  last_date: string;
+}
+
+export interface PtDrivers {
+  from: string;
+  to: string;
+  min_date: string;
+  max_date: string;
+  /** How the bus-days in range were split into shifts. */
+  shift_basis: { driver_change: number; halves: number; single: number };
+  hot_months: number[];
+  rows: PtDriverBus[];
+  drivers: PtDriverShift[];
+}
+
 /** Where uploaded or entered trips go: the fleet, or one trial. */
 export type PtTripTarget = { dataset?: undefined } | { dataset: "trial"; trial: number };
 
@@ -898,6 +1011,9 @@ export const api = {
     request<PtUploadSummary & PtSaveResult>("POST", "/pt/trips/upload", uploadForm(file, "import", dateOrder, target)),
   ptAddTrips: (t: { date: string; driver_id: number; bus_id?: number; route: string; trips: PtManualTrip[] } & PtTripTarget) =>
     request<PtSaveResult>("POST", "/pt/trips", t),
+
+  // PT Drivers: who drove which bus / model / shift, and consumption per driver per bus.
+  ptDrivers: (f: { from?: string; to?: string }) => request<PtDrivers>("GET", `/pt/drivers?${tripQuery(f)}`),
 
   // PT Trials (edit access to add / change).
   ptTrials: () => request<PtTrial[]>("GET", "/pt/trials"),
@@ -1003,6 +1119,13 @@ export const api = {
     if (prompt) form.append("prompt", prompt);
     return request<LiveChunkResult>("POST", `/live/${recordingId}/chunk`, form);
   },
+
+  feed: (date?: string) => request<FeedResponse>("GET", `/feed${date ? `?date=${date}` : ""}`),
+  addFeedTopic: (topic: string) => request<FeedTopic[]>("POST", "/feed/topics", { topic }),
+  removeFeedTopic: (id: number) => request<FeedTopic[]>("DELETE", `/feed/topics/${id}`),
+  setFeedTopicChinese: (id: number, on: boolean) => request<FeedTopic[]>("POST", `/feed/topics/${id}`, { include_zh: on }),
+  feedStatus: () => request<FeedStatus>("GET", "/feed/status"),
+  generateFeed: (force = false) => request<{ built: number }>("POST", "/feed/generate", { force }),
 
   /** Meeting mode (paid): like live recording, with speaker labels; the whole audio is saved with liveFinish. */
   meetingStart: (title?: string, recordedAt?: string) =>

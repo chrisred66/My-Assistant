@@ -12,6 +12,7 @@ use ChrisManager\Ai\Translator;
 use ChrisManager\Auth;
 use ChrisManager\Db;
 use ChrisManager\Env;
+use ChrisManager\Feed;
 use ChrisManager\HttpException;
 use ChrisManager\Meeting;
 use ChrisManager\ProviderUsage;
@@ -661,6 +662,77 @@ $router->post('/meetings/{id}/speakers', function (Request $r) use ($ownMeeting)
     $rec = $ownMeeting($r);
     Meeting::renameSpeaker((int) $rec['id'], (string) $r->input('label', ''), (string) $r->input('name', ''));
     return Meeting::speakers((int) $rec['id']);
+});
+
+// --- Daily Feed -----------------------------------------------------------------
+// Topics of interest and the daily feeds of verified top stories (see Feed). Same access as the General Tool.
+
+$router->get('/feed/topics', function (Request $r) {
+    Auth::requireGeneral($r);
+    return Feed::topics($r->userId());
+});
+
+// Body: {topic}. Starts with tomorrow's feed.
+$router->post('/feed/topics', function (Request $r) {
+    Auth::requireGeneral($r);
+    Feed::addTopic($r->userId(), (string) $r->input('topic', ''));
+    return Feed::topics($r->userId());
+});
+
+// Body: {include_zh: bool}. Chinese-language news for this topic (from the next feed built).
+$router->post('/feed/topics/{id}', function (Request $r) {
+    Auth::requireGeneral($r);
+    Feed::setChinese($r->userId(), (int) $r->params['id'], filter_var($r->input('include_zh', false), FILTER_VALIDATE_BOOLEAN));
+    return Feed::topics($r->userId());
+});
+
+$router->delete('/feed/topics/{id}', function (Request $r) {
+    Auth::requireGeneral($r);
+    Feed::removeTopic($r->userId(), (int) $r->params['id']);
+    return Feed::topics($r->userId());
+});
+
+// Today's feeds (or ?date=YYYY-MM-DD), the dates with feeds, and whether you have topics.
+$router->get('/feed', function (Request $r) {
+    $user = Auth::requireGeneral($r);
+    $date = (string) $r->query('date', date('Y-m-d'));
+    if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) {
+        throw new HttpException(422, 'date must be YYYY-MM-DD');
+    }
+    // Earlier days are on the paid plan; the free plan sees today's feed.
+    $free = Auth::isFree($user);
+    if ($free && $date !== date('Y-m-d')) {
+        throw new HttpException(403, 'Earlier days\' feeds are on the paid plan');
+    }
+    return [
+        'date'        => $date,
+        'today'       => date('Y-m-d'),
+        'plan'        => $free ? 'combined' : 'per_topic',
+        'can_go_back' => !$free,
+        'feeds'       => Feed::forDate($r->userId(), $date),
+        'dates'       => $free ? [] : Feed::dates($r->userId()),
+        'topics'      => Feed::topics($r->userId()),
+    ];
+});
+
+// For the desktop notification: is today's feed ready?
+$router->get('/feed/status', function (Request $r) {
+    Auth::requireGeneral($r);
+    $today = date('Y-m-d');
+    $n = (int) Db::one("SELECT COUNT(*) AS n FROM feeds WHERE user_id = ? AND feed_date = ? AND status = 'ready'", [$r->userId(), $today])['n'];
+    $due = (int) Db::one('SELECT COUNT(*) AS n FROM feed_topics WHERE user_id = ? AND removed_at IS NULL AND effective_from <= ?', [$r->userId(), $today])['n'];
+    return ['date' => $today, 'ready' => $n, 'topics_due' => $due, 'after_8' => (int) date('G') >= 8];
+});
+
+// Builds today's feeds now if they're missing (after 8:00, e.g. the scheduled run was missed); the Super Admin can
+// rebuild them ({force: true}).
+$router->post('/feed/generate', function (Request $r) {
+    $user = Auth::requireGeneral($r);
+    $force = filter_var($r->input('force', false), FILTER_VALIDATE_BOOLEAN) && ($user['account_role'] ?? $user['role']) === 'super_admin';
+    if (!$force && (int) date('G') < 8) {
+        throw new HttpException(409, 'Today\'s feed is built at 8:00');
+    }
+    return ['built' => Feed::generate($user, null, $force)];
 });
 
 // --- Token usage ----------------------------------------------------------

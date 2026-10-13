@@ -1146,3 +1146,144 @@ span.bg-deepseek { background: var(--series-deepseek); }
 span.bg-claude_code { background: var(--series-claude_code); }
 .fill-claude_code { fill: var(--series-claude_code); }
 .stroke-claude_code { stroke: var(--series-claude_code); }
+
+/* ---- PT Drivers ---- */
+
+.th-sort {
+  all: unset;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.th-sort:focus-visible {
+  outline: 2px solid var(--accent, var(--c1));
+  outline-offset: 2px;
+}
+.th-arrow {
+  display: inline-block;
+  width: 1em;
+  text-align: center;
+}
+.data-table tr.clickable {
+  cursor: pointer;
+}
+.disclosure {
+  all: unset;
+  display: inline-block;
+  width: 1em;
+  color: var(--muted);
+  cursor: pointer;
+}
+.inner-table {
+  font-size: 0.82rem;
+}
+.shift-bar {
+  display: inline-flex;
+  gap: 2px;
+  width: 120px;
+  height: 10px;
+  vertical-align: middle;
+}
+.shift-bar span {
+  flex-basis: 0;
+  min-width: 3px;
+  border-radius: 3px;
+}
+.shift-a { background: var(--c1); }
+.shift-b { background: var(--c4); }
+.model-group {
+  padding: 10px 14px;
+}
+.model-head {
+  all: unset;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+  cursor: pointer;
+  flex-wrap: wrap;
+}
+.model-head:focus-visible {
+  outline: 2px solid var(--accent, var(--c1));
+}
+.model-name {
+  font-weight: 600;
+}
+.model-group .inner-table {
+  margin-top: 10px;
+}
+.driver-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 8px 0 0;
+}
+.chip {
+  padding: 0 6px;
+  border-radius: 4px;
+  background: var(--surface-2);
+  font-size: 0.74rem;
+}
+.badge-energy-e { border-left-color: var(--c1); }
+.badge-energy-h { border-left-color: var(--c2); }
+.diff-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: flex-end;
+}
+.diff-bar {
+  position: relative;
+  display: inline-block;
+  width: 80px;
+  height: 8px;
+  background: linear-gradient(var(--grid), var(--grid)) center / 1px 100% no-repeat;
+}
+.diff-bar span {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-radius: 3px;
+}
+.diff-neg { background: var(--good); }
+.diff-pos { background: var(--serious); }
+.cons-cell {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+.inner-table th.season-head {
+  text-align: center;
+  border-left: 1px solid var(--border);
+}
+.inner-table .season-start {
+  border-left: 1px solid var(--border);
+}
+.season-note {
+  margin: 8px 0 0;
+}
+.season-note .cons-cell {
+  display: inline;
+}
+.season-split {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  margin-top: 4px;
+  color: var(--muted);
+}
+.season-split strong {
+  color: var(--text);
+  font-weight: 600;
+}
+.small-value {
+  font-size: 11px;
+}
+.pair-change {
+  fill: var(--muted);
+  font-size: 11px;
+}
+.source-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}

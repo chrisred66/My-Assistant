@@ -12,9 +12,12 @@ final class Usage
         Db::insert('token_usage', $row + ['occurred_at' => date('Y-m-d H:i:s')]);
     }
 
-    /** Logs one chat-model call. */
+    /** Logs one chat-model call (DeepSeek calls with their exact cost: its prices depend on the time of day). */
     public static function logChat(int $userId, string $provider, Ai\ChatResult $result, string $feature): void
     {
+        $cost = $provider === 'deepseek'
+            ? self::deepSeekCost($result->model, $result->inputTokens, $result->cacheReadTokens, $result->outputTokens, new \DateTimeImmutable())
+            : null;
         self::log([
             'user_id'            => $userId,
             'provider'           => $provider,
@@ -25,7 +28,40 @@ final class Usage
             'cache_read_tokens'  => $result->cacheReadTokens,
             'cache_write_tokens' => $result->cacheWriteTokens,
             'request_id'         => $result->requestId,
-        ]);
+        ] + ($cost !== null ? ['cost_usd' => $cost] : []));
+    }
+
+    /**
+     * DeepSeek's peak hours: 01:00-04:00 and 06:00-10:00 UTC, Monday to Friday, except mainland China's public
+     * holidays (ChinaHolidays). Both windows fall on the same calendar day in Beijing (09:00-12:00 and 14:00-18:00),
+     * so the UTC date is the Chinese date. Weekend make-up working days (调休) stay off-peak: DeepSeek counts all
+     * weekends as off-peak.
+     */
+    public static function deepSeekPeak(\DateTimeInterface $at): bool
+    {
+        $utc = \DateTimeImmutable::createFromInterface($at)->setTimezone(new \DateTimeZone('UTC'));
+        $hour = (int) $utc->format('G');
+        return (int) $utc->format('N') <= 5 && (($hour >= 1 && $hour < 4) || ($hour >= 6 && $hour < 10))
+            && !ChinaHolidays::isHoliday($utc->format('Y-m-d'));
+    }
+
+    /**
+     * A DeepSeek call's cost in USD: model_prices holds the peak rates (migration 012), halved off-peak.
+     * NULL when the model has no price row.
+     */
+    public static function deepSeekCost(string $model, int $input, int $cacheRead, int $output, \DateTimeInterface $at): ?float
+    {
+        $p = Db::one(
+            "SELECT input_per_mtok, output_per_mtok, cache_read_per_mtok FROM model_prices
+              WHERE provider = 'deepseek' AND model = ? AND effective_from <= ? ORDER BY effective_from DESC LIMIT 1",
+            [$model, $at->format('Y-m-d')],
+        );
+        if ($p === null) {
+            return null;
+        }
+        $peak = ($input * (float) $p['input_per_mtok'] + $output * (float) $p['output_per_mtok']
+            + $cacheRead * (float) ($p['cache_read_per_mtok'] ?? $p['input_per_mtok'])) / 1_000_000;
+        return round(self::deepSeekPeak($at) ? $peak : $peak / 2, 6);
     }
 
     /**

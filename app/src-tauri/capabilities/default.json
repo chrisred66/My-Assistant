@@ -38,6 +38,8 @@
         "core:window:allow-outer-size",
         "core:window:allow-current-monitor",
         "core:window:allow-cursor-position",
-        "core:window:allow-is-visible"
+        "core:window:allow-is-visible",
+        "notification:default",
+        "core:window:allow-set-ignore-cursor-events"
     ]
 }
