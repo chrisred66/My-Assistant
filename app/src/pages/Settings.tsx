@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { ErrorText } from "../components/common";
-import { api, type GeneralPlan, type ManagedUser, type PtModule, type PtRole, type Role, type User } from "../lib/api";
+import { api, type ActivityEntry, type Device, type GeneralPlan, type ManagedUser, type PtModule, type PtRole, type Role, type User } from "../lib/api";
 import { ballEnabled, setBallEnabled } from "../lib/ball";
 import { clearSkin, loadPack, loadSkin, petEnabled, petLook, saveSkinImage, setPetEnabled, setPetLook, setSkinCredit, setSkinFacing, skinCredit, skinFacing, SKIN_MOODS, type LoadedPack, type PetLook, type PetSkin, type SkinMood } from "../lib/pet";
 import ThemeSwitch from "../components/ThemeSwitch";
+import { isDesktop } from "../lib/platform";
 import { errorMessage, formatDateTime } from "../lib/format";
 import type { Settings } from "../lib/settings";
 
@@ -18,7 +19,6 @@ const ROLE_LABELS: Record<Role, string> = { super_admin: "Super Admin", admin: "
 const PLAN_LABELS: Record<GeneralPlan, string> = { none: "No access", free: "Free", paid: "Paid" };
 const PT_ROLE_LABELS: Record<PtRole, string> = { none: "No access", big_man: "Big Man (all PT)", manager: "Manager", staff: "Low Man" };
 const MODULE_LABELS: Record<PtModule, string> = { operations: "Operations", maintenance: "Maintenance", planning: "Planning" };
-const FREE_LIMIT = 10;
 
 /** "Maintenance Manager", "Big Man (all PT)", "No access". */
 function ptLabel(role: PtRole, module: PtModule | null): string {
@@ -84,10 +84,12 @@ export default function SettingsPage({ settings, user, onLogout, onUserChange }:
         </div>
       </div>
       <YourName user={user} onUserChange={onUserChange} />
-      {user.access.usage && <UsageBallSetting />}
-      {user.access.usage && <PetSetting />}
-      <ChangePassword />
+      {isDesktop && user.access.usage && <UsageBallSetting />}
+      {isDesktop && user.access.usage && <PetSetting />}
+      <ChangePassword onSignedOut={onLogout} />
+      {!user.viewed_by && <Devices />}
       {user.access.manage_users && <Users me={user} />}
+      {user.access.manage_users && <Activity me={user} />}
 
       <div className="card stack">
         <h2>Sign out</h2>
@@ -368,7 +370,8 @@ function YourName({ user, onUserChange }: { user: User; onUserChange: (u: User) 
   );
 }
 
-function ChangePassword() {
+/** After a change the server signs out every device, this one too, so the app goes back to the sign-in screen. */
+function ChangePassword({ onSignedOut }: { onSignedOut: () => void }) {
   const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");
   const [confirm, setConfirm] = useState("");
@@ -391,6 +394,8 @@ function ChangePassword() {
       setCurrent("");
       setNext("");
       setConfirm("");
+      window.alert("Password changed. You've been signed out on all your devices: sign in again with your new password.");
+      onSignedOut();
     } catch (err) {
       setError(errorMessage(err));
     } finally {
@@ -467,10 +472,12 @@ function Users({ me }: { me: User }) {
         </button>
       </div>
       <p className="muted small">
-        Each account has a General User plan (the General Tool: Recordings, Translate, Transcripts) and a PT role. Free: record (audio only) and {FREE_LIMIT}{" "}
-        Translate requests a day, no transcription; PT users get Free unless given Paid.
-        PT Managers and Low Man work in one module (Planning = Fleet, Trials, Charging). Low Man can view and add, Managers can also edit,
-        close and delete. {me.account_role === "super_admin" ? "" : "Admins can change accounts below Admin only."}
+        Each account has a General User plan (the General Tool: Recordings, Translate, Transcripts, Daily Feed) and a PT role. Free: record
+        (audio only) and 300 words of translation a day, no transcription. Paid: 3,000 words of translation and 60 minutes of transcription
+        (recordings and meetings together) a day. Everyone has 125 MB of audio storage. PT users get Free unless given Paid. PT Managers and
+        Low Man work in one module (Planning = Fleet, Trials, Charging); Low Man can view and add, Managers can also edit, close and delete.
+        Admins manage accounts below Admin and use the General Tool as Paid; they see PT only with a PT role.{" "}
+        {me.account_role === "super_admin" ? "" : "Admins can change accounts below Admin only."}
       </p>
       {showAdd && (
         <AddUser
@@ -515,7 +522,7 @@ function Users({ me }: { me: User }) {
                   </td>
                   <td>
                     {u.role !== "user" ? (
-                      <span className="muted small">all</span>
+                      <span className="muted small">{u.role === "admin" ? "Paid" : "all"}</span>
                     ) : u.editable ? (
                       <select value={u.general_plan} onChange={(e) => void update(u, { general_plan: e.target.value as GeneralPlan })} aria-label={`General User plan of ${u.display_name}`}>
                         {(Object.keys(PLAN_LABELS) as GeneralPlan[]).map((p) => (
@@ -531,7 +538,7 @@ function Users({ me }: { me: User }) {
                     )}
                   </td>
                   <td>
-                    {u.role !== "user" ? (
+                    {u.role === "super_admin" ? (
                       <span className="muted small">all</span>
                     ) : u.editable ? (
                       <PtGroupPicker
@@ -639,8 +646,8 @@ function AddUser({ me, onAdded }: { me: User; onAdded: () => void }) {
         display_name: displayName.trim() || undefined,
         role,
         general_plan: role === "user" ? plan : "none",
-        pt_role: role === "user" ? ptRole : "none",
-        pt_module: role === "user" && needsModule ? ptModule : "",
+        pt_role: ptRole,
+        pt_module: needsModule ? ptModule : "",
         password,
       });
       onAdded();
@@ -673,22 +680,23 @@ function AddUser({ me, onAdded }: { me: User; onAdded: () => void }) {
             <span>Role</span>
             <select value={role} onChange={(e) => setRole(e.target.value as "user" | "admin")}>
               <option value="user">User</option>
-              <option value="admin">Admin (everything except Usage; manages users)</option>
+              <option value="admin">Admin (manages users; General Tool as Paid; PT only with a PT role)</option>
             </select>
           </label>
         )}
-        {role === "user" && (
-          <>
-            <label className="field inline">
-              <span>General User</span>
-              <select value={plan} onChange={(e) => setPlan(e.target.value as GeneralPlan)}>
-                {(Object.keys(PLAN_LABELS) as GeneralPlan[]).map((p) => (
-                  <option key={p} value={p}>
-                    {PLAN_LABELS[p]}
-                  </option>
-                ))}
-              </select>
-            </label>
+        <>
+            {role === "user" && (
+              <label className="field inline">
+                <span>General User</span>
+                <select value={plan} onChange={(e) => setPlan(e.target.value as GeneralPlan)}>
+                  {(Object.keys(PLAN_LABELS) as GeneralPlan[]).map((p) => (
+                    <option key={p} value={p}>
+                      {PLAN_LABELS[p]}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
             <label className="field inline">
               <span>PT role</span>
               <select value={ptRole} onChange={(e) => setPtRole(e.target.value as PtRole)}>
@@ -712,8 +720,7 @@ function AddUser({ me, onAdded }: { me: User; onAdded: () => void }) {
                 </select>
               </label>
             )}
-          </>
-        )}
+        </>
         <label className="field inline grow">
           <span>Initial password (12+ characters)</span>
           <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required minLength={12} autoComplete="new-password" />
@@ -724,5 +731,221 @@ function AddUser({ me, onAdded }: { me: User; onAdded: () => void }) {
       </div>
       <ErrorText message={error} />
     </form>
+  );
+}
+
+/** Where you're signed in: sign out a lost or old device, or every device except this one. */
+function Devices() {
+  const [devices, setDevices] = useState<Device[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    api.devices().then(setDevices, (e) => setError(errorMessage(e)));
+  }, []);
+
+  async function run(action: () => Promise<Device[]>) {
+    setError(null);
+    try {
+      setDevices(await action());
+    } catch (e) {
+      setError(errorMessage(e));
+    }
+  }
+
+  const others = devices?.filter((d) => !d.current).length ?? 0;
+  return (
+    <div className="card stack">
+      <div className="row space-between wrap">
+        <h2>Your devices</h2>
+        {others > 0 && (
+          <button className="small-btn" onClick={() => void run(api.signOutOtherDevices)}>
+            Sign out all other devices
+          </button>
+        )}
+      </div>
+      <p className="muted small">Where your account is signed in. Sign out a device you've lost or no longer use; it will need your password again.</p>
+      <ErrorText message={error} />
+      {devices && (
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th>Device</th>
+              <th>Signed in</th>
+              <th>Last used</th>
+              <th />
+            </tr>
+          </thead>
+          <tbody>
+            {devices.map((d) => (
+              <tr key={d.id}>
+                <td>
+                  {d.device || "Unnamed device"}
+                  {d.current && <> <span className="badge badge-good">this device</span></>}
+                </td>
+                <td className="nowrap">{formatDateTime(d.signed_in_at)}</td>
+                <td className="nowrap">{d.last_used_at ? formatDateTime(d.last_used_at) : "—"}</td>
+                <td className="num">
+                  {!d.current && (
+                    <button className="small-btn" onClick={() => void run(() => api.signOutDevice(d.id))}>
+                      Sign out
+                    </button>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
+/** Plain-English names for the actions in the activity log ("POST /recordings" → "Uploaded a recording"). */
+const ACTIONS: [RegExp, string][] = [
+  [/^sign-in$/, "Signed in"],
+  [/^sign-in failed$/, "Failed sign-in"],
+  [/^sign-in locked$/, "Sign-in blocked (too many failures)"],
+  [/^POST \/auth\/logout$/, "Signed out"],
+  [/^POST \/auth\/password$/, "Changed password"],
+  [/^POST \/auth\/role$/, "Switched role"],
+  [/^POST \/auth\/profile$/, "Changed their name"],
+  [/^(DELETE \/auth\/devices\/|POST \/auth\/devices\/sign-out-others)/, "Signed out a device"],
+  [/^POST \/users$/, "Created an account"],
+  [/^POST \/users\/\d+$/, "Changed an account"],
+  [/^POST \/ai\/translate$/, "Translated text"],
+  [/^POST \/recordings$/, "Uploaded a recording"],
+  [/^POST \/recordings\/\d+\/transcribe$/, "Transcribed a recording"],
+  [/^POST \/recordings\/\d+$/, "Renamed a recording"],
+  [/^DELETE \/recordings\/\d+$/, "Deleted a recording"],
+  [/^POST \/live$/, "Started a live recording"],
+  [/^POST \/live\/\d+\/chunk$/, "Live transcription"],
+  [/^POST \/live\/\d+\/finish$/, "Saved a live recording"],
+  [/^POST \/meetings$/, "Started a meeting"],
+  [/^POST \/meetings\/\d+\/chunk$/, "Meeting transcription"],
+  [/^POST \/meetings\/\d+\/translate$/, "Translated a meeting"],
+  [/^POST \/meetings\/\d+\/speakers$/, "Named a speaker"],
+  [/^POST \/transcripts\/\d+\/translate$/, "Translated a transcript"],
+  [/^POST \/transcripts\/\d+$/, "Edited a transcript"],
+  [/^DELETE \/transcripts\/\d+$/, "Deleted a transcript"],
+  [/^POST \/transcripts\/learn$/, "Learned from edits"],
+  [/^POST \/feed\/topics/, "Changed feed topics"],
+  [/^DELETE \/feed\/topics/, "Removed a feed topic"],
+  [/^POST \/feed\/generate$/, "Built the Daily Feed"],
+  [/^POST \/usage\/sync$/, "Synced usage"],
+  [/^GET /, "Viewed"],
+];
+
+function actionLabel(a: ActivityEntry): string {
+  const hit = ACTIONS.find(([re]) => re.test(a.action));
+  return hit ? hit[1] : a.action;
+}
+
+/** Administrators: what people did (the Super Admin sees everyone; Admins see accounts below Admin). */
+function Activity({ me }: { me: User }) {
+  const [users, setUsers] = useState<ManagedUser[]>([]);
+  const [userId, setUserId] = useState<number | "">("");
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+  const [rows, setRows] = useState<ActivityEntry[]>([]);
+  const [total, setTotal] = useState(0);
+  const [error, setError] = useState<string | null>(null);
+  const [open, setOpen] = useState(false);
+
+  const load = useCallback(
+    async (offset: number) => {
+      setError(null);
+      try {
+        const res = await api.activity({ user: userId === "" ? undefined : userId, from: from || undefined, to: to || undefined, limit: 100, offset });
+        setTotal(res.total);
+        setRows((r) => (offset === 0 ? res.rows : [...r, ...res.rows]));
+      } catch (e) {
+        setError(errorMessage(e));
+      }
+    },
+    [userId, from, to],
+  );
+
+  useEffect(() => {
+    if (!open) return;
+    void load(0);
+  }, [open, load]);
+
+  useEffect(() => {
+    if (open && users.length === 0) api.users().then(setUsers, () => undefined);
+  }, [open, users.length]);
+
+  return (
+    <details className="card" open={open} onToggle={(e) => setOpen((e.target as HTMLDetailsElement).open)}>
+      <summary>Activity</summary>
+      <div className="stack">
+        <p className="muted small">
+          Every change people make, every sign-in attempt, and everything opened while the Super Admin views as someone. Only the action is
+          kept, never what was typed or recorded. Kept for a year.{me.account_role === "super_admin" ? "" : " You see accounts below Admin."}
+        </p>
+        <div className="row wrap">
+          <label className="field inline">
+            <span>Person</span>
+            <select value={userId} onChange={(e) => setUserId(e.target.value === "" ? "" : Number(e.target.value))}>
+              <option value="">Everyone</option>
+              {users.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.display_name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="field inline">
+            <span>From</span>
+            <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
+          </label>
+          <label className="field inline">
+            <span>To</span>
+            <input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
+          </label>
+        </div>
+        <ErrorText message={error} />
+        <div className="table-scroll">
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>When</th>
+                <th>Who</th>
+                <th>What</th>
+                <th>Result</th>
+                <th>From</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((a) => (
+                <tr key={a.id} className={a.status !== null && a.status >= 400 ? "muted-row" : undefined}>
+                  <td className="nowrap">{formatDateTime(a.created_at)}</td>
+                  <td>
+                    {a.user_name ?? (a.target ? <span className="mono small">{a.target}</span> : "—")}
+                    {a.viewed_by_name && <div className="muted small">viewed by {a.viewed_by_name}</div>}
+                  </td>
+                  <td>
+                    {actionLabel(a)}
+                    <div className="muted small mono">{a.action}</div>
+                  </td>
+                  <td>{a.status === null ? "" : a.status < 400 ? "OK" : a.status === 429 ? "Limit reached" : a.status === 403 ? "Not allowed" : `Failed (${a.status})`}</td>
+                  <td className="small">
+                    {a.ip}
+                    {a.device && <div className="muted small" title={a.device}>{a.device.slice(0, 40)}</div>}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {rows.length === 0 && !error && <p className="muted small">Nothing yet.</p>}
+        {rows.length < total && (
+          <div>
+            <button className="small-btn" onClick={() => void load(rows.length)}>
+              Show more ({total - rows.length} older)
+            </button>
+          </div>
+        )}
+      </div>
+    </details>
   );
 }

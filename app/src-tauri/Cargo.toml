@@ -1,6 +1,6 @@
 [package]
 name = "chrismanager"
-version = "0.3.0"
+version = "0.4.0"
 description = "A Tauri App"
 authors = ["you"]
 edition = "2024"
@@ -26,6 +26,7 @@ base64 = "0.22"
 tauri-plugin-http = "2"
 tauri-plugin-store = "2"
 tauri-plugin-notification = "2"
+tauri-plugin-dialog = "2"
 
 # Login token goes into Windows Credential Manager; other platforms fall back to the store file.
 [target.'cfg(windows)'.dependencies]

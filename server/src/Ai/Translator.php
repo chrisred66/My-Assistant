@@ -4,10 +4,14 @@ declare(strict_types=1);
 
 namespace ChrisManager\Ai;
 
+use ChrisManager\Allowance;
 use ChrisManager\HttpException;
 use ChrisManager\Usage;
 
-/** Translation to English. Always routed to the translation provider (Claude by default); see Routing. */
+/**
+ * Translation to English, routed to the translation provider (TRANSLATE_PROVIDER; see Routing). A model is passed only
+ * when the Super Admin chose one. Every translation counts its words against the person's daily allowance (Allowance).
+ */
 final class Translator
 {
     private const ARABIC_PROMPT = <<<'TXT'
@@ -36,9 +40,12 @@ final class Translator
         if (trim($arabic) === '') {
             throw new HttpException(422, 'Nothing to translate');
         }
-        $provider = Routing::translator();
+        $words = Allowance::words($arabic);
+        Allowance::checkWords($userId, $words);
+        $provider = Routing::translatorFor($model);
         $result   = $provider->complete(self::ARABIC_PROMPT, "<arabic>\n{$arabic}\n</arabic>", $model ?? $provider->defaultModel());
         Usage::logChat($userId, $provider->name(), $result, 'translate');
+        Allowance::addWords($userId, $words);
         return $result;
     }
 
@@ -62,15 +69,18 @@ final class Translator
             return ['language' => $language, 'english' => null, 'provider' => null, 'model' => null];
         }
 
-        $provider = Routing::translator();
+        $words = Allowance::words($text);
+        Allowance::checkWords($userId, $words);
+        $provider = Routing::translatorFor($model);
         $result   = $provider->complete(self::TO_ENGLISH_PROMPT, "<transcript>\n{$text}\n</transcript>", $model ?? $provider->defaultModel(), $effort);
         Usage::logChat($userId, $provider->name(), $result, $feature);
 
         $english = trim($result->text);
-        // Language unknown and the translator handed the text back unchanged: it was English.
+        // Language unknown and the translator handed the text back unchanged: it was English (not counted).
         if ($language === null && $english === trim($text)) {
             return ['language' => 'en', 'english' => null, 'provider' => $provider->name(), 'model' => $result->model];
         }
+        Allowance::addWords($userId, $words);
         return ['language' => $language, 'english' => $english !== '' ? $english : null, 'provider' => $provider->name(), 'model' => $result->model];
     }
 }

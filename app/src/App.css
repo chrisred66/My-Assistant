@@ -1287,3 +1287,28 @@ span.bg-claude_code { background: var(--series-claude_code); }
   flex-direction: column;
   gap: 2px;
 }
+
+/* ---- Recordings: audio storage ---- */
+
+.storage-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+}
+.storage-track {
+  display: inline-block;
+  width: 160px;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+.storage-track span {
+  display: block;
+  height: 100%;
+  background: var(--c1);
+}
+.storage-track.near span {
+  background: var(--warning);
+}

@@ -1,9 +1,11 @@
 import { Fragment, useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { save } from "@tauri-apps/plugin-dialog";
 import { CopyButton, ErrorText } from "../components/common";
 import { TranscriptEditor } from "../components/TranscriptEdit";
 import { LinePairs } from "../components/LinePairs";
 import MeetingPanel, { MeetingSpeakers } from "./MeetingPanel";
-import { api, type Recording, type UploadResult } from "../lib/api";
+import { api, type Recording, type RemovedAudio, type StorageInfo, type UploadResult } from "../lib/api";
 import {
   errorMessage,
   formatBytes,
@@ -14,6 +16,7 @@ import {
 } from "../lib/format";
 import { LiveRecorder, type LiveChunk } from "../lib/liveRecorder";
 import { startActivity, track } from "../lib/activity";
+import { isDesktop } from "../lib/platform";
 
 const KEY_HINT = "Transcription needs its AI API key set in server/.env.";
 const MAX_IN_FLIGHT = 2; // chunks being transcribed at once; more would only queue at the server
@@ -27,11 +30,15 @@ export default function Recordings({ canTranscribe = true }: { canTranscribe?: b
   const [list, setList] = useState<Recording[] | null>(null);
   const [listError, setListError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<number | null>(null);
+  const [storage, setStorage] = useState<StorageInfo | null>(null);
+  const [removed, setRemoved] = useState<RemovedAudio[]>([]);
 
   const refresh = useCallback(async () => {
     setListError(null);
     try {
-      setList(await api.recordings());
+      const [list, storage] = await Promise.all([api.recordings(), api.recordingStorage()]);
+      setList(list);
+      setStorage(storage);
     } catch (e) {
       setListError(errorMessage(e));
     }
@@ -42,8 +49,9 @@ export default function Recordings({ canTranscribe = true }: { canTranscribe?: b
   }, [refresh]);
 
   const saved = useCallback(
-    (id: number) => {
+    (id: number, removedAudio?: RemovedAudio[]) => {
       setExpanded(id);
+      if (removedAudio?.length) setRemoved(removedAudio);
       void refresh();
     },
     [refresh],
@@ -68,6 +76,16 @@ export default function Recordings({ canTranscribe = true }: { canTranscribe?: b
           Refresh
         </button>
       </div>
+      {storage && <StorageBar storage={storage} />}
+      {removed.length > 0 && (
+        <div className="adjusted-note small">
+          To stay within your 125 MB, the audio of your oldest {removed.length === 1 ? "recording was" : `${removed.length} recordings were`} removed:{" "}
+          {removed.map((x) => x.title || `#${x.id}`).join(", ")}. Their transcripts are kept.{" "}
+          <button className="link-btn" onClick={() => setRemoved([])}>
+            OK
+          </button>
+        </div>
+      )}
       <ErrorText message={listError} />
       {list === null && !listError && <p className="muted">Loading…</p>}
       {list?.length === 0 && <p className="muted">No recordings yet.</p>}
@@ -120,7 +138,26 @@ export default function Recordings({ canTranscribe = true }: { canTranscribe?: b
   );
 }
 
+/** How much of the 125 MB is used; near the limit it says the oldest audio goes first. */
+function StorageBar({ storage }: { storage: StorageInfo }) {
+  const share = Math.min(1, storage.used_bytes / storage.limit_bytes);
+  return (
+    <div className="storage-bar small">
+      <span>
+        Audio storage: {formatBytes(storage.used_bytes)} of {formatBytes(storage.limit_bytes)}
+      </span>
+      <span className={`storage-track${share > 0.8 ? " near" : ""}`} aria-hidden>
+        <span style={{ width: `${share * 100}%` }} />
+      </span>
+      {share > 0.8 && (
+        <span className="muted">When it's full, the oldest recordings' audio is removed to make room (transcripts stay). Save any audio you want to keep.</span>
+      )}
+    </div>
+  );
+}
+
 function status(r: Recording): string {
+  if (r.audio_removed_at) return r.source_text ? "Transcript (audio removed)" : "Audio removed";
   if (!r.original_name && r.size_bytes === 0) return "Not finished";
   if (!r.source_text) return "Audio only";
   if (r.language === "en" || r.translated_text) return "Transcribed";
@@ -141,7 +178,7 @@ interface Segment {
 
 type Phase = "idle" | "starting" | "recording" | "finishing";
 
-function LivePanel({ onSaved, canTranscribe }: { onSaved: (recordingId: number) => void; canTranscribe: boolean }) {
+function LivePanel({ onSaved, canTranscribe }: { onSaved: (recordingId: number, removed?: RemovedAudio[]) => void; canTranscribe: boolean }) {
   const [phase, setPhase] = useState<Phase>("idle");
   const [title, setTitle] = useState("");
   const [segments, setSegments] = useState<Segment[]>([]);
@@ -254,10 +291,10 @@ function LivePanel({ onSaved, canTranscribe }: { onSaved: (recordingId: number) 
       await whenIdle();
       const ext = recording.mimeType.includes("ogg") ? "ogg" : recording.mimeType.includes("mp4") ? "m4a" : "webm";
       const stamp = toSqlDateTime(new Date()).replace(/[: ]/g, "-");
-      await api.liveFinish(recordingId, recording.audio, `recording-${stamp}.${ext}`, recording.durationMs / 1000);
+      const done = await api.liveFinish(recordingId, recording.audio, `recording-${stamp}.${ext}`, recording.durationMs / 1000);
       setSavedId(recordingId);
       setTitle("");
-      onSaved(recordingId);
+      onSaved(recordingId, done.audio_removed);
     } catch (e) {
       setError(`The recording couldn't be saved: ${errorMessage(e)}`);
     } finally {
@@ -375,7 +412,7 @@ function LivePanel({ onSaved, canTranscribe }: { onSaved: (recordingId: number) 
 
 // ---- Upload an existing file ------------------------------------------------------
 
-function FileUpload({ onSaved, canTranscribe }: { onSaved: (recordingId: number) => void; canTranscribe: boolean }) {
+function FileUpload({ onSaved, canTranscribe }: { onSaved: (recordingId: number, removed?: RemovedAudio[]) => void; canTranscribe: boolean }) {
   const [file, setFile] = useState<File | null>(null);
   const [url, setUrl] = useState<string | null>(null);
   const [title, setTitle] = useState("");
@@ -405,7 +442,7 @@ function FileUpload({ onSaved, canTranscribe }: { onSaved: (recordingId: number)
       setResult(res);
       pick(undefined);
       setTitle("");
-      onSaved(res.id);
+      onSaved(res.id, res.audio_removed);
     } catch (err) {
       setError(errorMessage(err));
     } finally {
@@ -462,8 +499,25 @@ function RecordingDetails({ recording: r, onChanged, canTranscribe }: { recordin
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
   const [note, setNote] = useState<string | null>(null);
-  const hasAudio = r.size_bytes > 0;
+  const hasAudio = r.has_audio;
   const name = r.title || r.original_name || `Recording #${r.id}`;
+
+  /** Downloads the audio and saves it where the person chooses (kept even after it's removed from the server). */
+  async function saveAudio() {
+    setError(null);
+    try {
+      const { bytes, name: fileName } = await api.recordingAudio(r.id);
+      const ext = fileName.includes(".") ? fileName.slice(fileName.lastIndexOf(".") + 1) : "webm";
+      const path = await save({ defaultPath: fileName, filters: [{ name: "Audio", extensions: [ext] }] });
+      if (!path) return;
+      let binary = "";
+      for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+      await invoke("save_file", { path, data: btoa(binary) });
+      setNote(`Audio saved to ${path}`);
+    } catch (e) {
+      setError(errorMessage(e));
+    }
+  }
 
   async function rename() {
     const title = window.prompt("Recording title", r.title || r.original_name || "");
@@ -523,6 +577,11 @@ function RecordingDetails({ recording: r, onChanged, canTranscribe }: { recordin
       <button className="small-btn" onClick={() => void rename()} disabled={busy !== null}>
         Rename
       </button>
+      {hasAudio && isDesktop && (
+        <button className="small-btn" onClick={() => void saveAudio()} disabled={busy !== null}>
+          Save audio…
+        </button>
+      )}
       {r.transcript_id && r.source_text && !editing && (
         <button className="small-btn" onClick={() => (setEditing(true), setNote(null))} disabled={busy !== null}>
           Edit transcript
@@ -587,7 +646,7 @@ function RecordingDetails({ recording: r, onChanged, canTranscribe }: { recordin
             {!r.translated_text && !english && <p className="muted small">Not translated yet.</p>}
           </>
         ) : (
-          <p className="muted small">{!hasAudio ? "This recording wasn't finished, so no audio was saved." : canTranscribe ? "Not transcribed yet." : "Audio only: transcription is on the paid plan."}</p>
+          <p className="muted small">{r.audio_removed_at ? "The audio was removed to stay within your 125 MB of storage, and it wasn't transcribed." : !hasAudio ? "This recording wasn't finished, so no audio was saved." : canTranscribe ? "Not transcribed yet." : "Audio only: transcription is on the paid plan."}</p>
         )}
         <ErrorText message={error} />
       </div>

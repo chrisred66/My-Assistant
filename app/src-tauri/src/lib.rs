@@ -144,6 +144,14 @@ fn system_audio_stop(state: tauri::State<system_audio::SystemAudio>) {
     system_audio::stop(&state);
 }
 
+/// Saves a downloaded file (e.g. a recording's audio) where the person chose in the save dialog.
+#[tauri::command]
+fn save_file(path: String, data: String) -> Result<(), String> {
+    use base64::Engine;
+    let bytes = base64::engine::general_purpose::STANDARD.decode(data).map_err(|e| e.to_string())?;
+    std::fs::write(&path, bytes).map_err(|e| format!("Couldn't save the file: {e}"))
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -151,11 +159,17 @@ pub fn run() {
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_dialog::init())
         .manage(system_audio::SystemAudio::default())
         .setup(|app| {
-            fullscreen::watch(app.handle().clone());
             let repos = signals::GitRepos::default();
-            signals::watch(app.handle().clone(), repos.0.clone());
+            // The ball and pet's watchers (full screen, keyboard / mouse activity, git) only matter on the desktop; on a
+            // phone they'd just poll for nothing.
+            #[cfg(desktop)]
+            {
+                fullscreen::watch(app.handle().clone());
+                signals::watch(app.handle().clone(), repos.0.clone());
+            }
             app.manage(repos);
             Ok(())
         })
@@ -173,7 +187,8 @@ pub fn run() {
             pet_skin_credit,
             pet_skin_set_credit,
             foreground_app,
-            pet_watch_repos
+            pet_watch_repos,
+            save_file
         ])
         // Closing the main window quits the app, including the desktop usage ball (otherwise the hidden or floating
         // ball window would keep the app running with no way back to the main window).

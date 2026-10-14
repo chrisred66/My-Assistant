@@ -20,6 +20,23 @@ final class Routing
         return self::chat(Env::get('TRANSLATE_PROVIDER', 'anthropic'), 'TRANSLATE_PROVIDER');
     }
 
+    /**
+     * The translator for one call: the configured one, or, for a model the Super Admin chose, that model's own
+     * provider (so a Claude model goes to Anthropic even while translation is routed to DeepSeek).
+     */
+    public static function translatorFor(?string $model): ChatProvider
+    {
+        if ($model === null || $model === '') {
+            return self::translator();
+        }
+        return match (true) {
+            str_starts_with($model, 'claude-')                                              => new AnthropicProvider(),
+            str_starts_with($model, 'gpt-') || preg_match('/^o\d/', $model) === 1          => new OpenAiCompatProvider('openai'),
+            str_starts_with($model, 'deepseek-')                                            => new OpenAiCompatProvider('deepseek'),
+            default => throw new HttpException(422, 'Unknown model: choose a claude-, gpt- or deepseek- model'),
+        };
+    }
+
     public static function light(): ChatProvider
     {
         return self::chat(Env::get('LIGHT_PROVIDER', 'deepseek'), 'LIGHT_PROVIDER');

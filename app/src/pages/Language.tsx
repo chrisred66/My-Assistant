@@ -1,6 +1,7 @@
 // General Tool: Translate, Recordings and Transcripts as one tab. Sub-pages stay mounted once opened, so a live
 // recording keeps going while you look at Transcripts.
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { api, type User } from "../lib/api";
 import Recordings from "./Recordings";
 import Transcripts from "./Transcripts";
 import Translate from "./Translate";
@@ -17,16 +18,37 @@ const TABS: { id: LanguageTab; label: string; description: string }[] = [
   { id: "transcripts", label: "Transcripts", description: "Your latest 200 transcripts, from recordings and typed text. Edit or delete any of them; corrections to recordings' transcripts are learned from." },
 ];
 
-/** `freeLimit`: the free plan's translations per day, shown in the header (null for unlimited accounts). */
+/** Today's allowances, refreshed every 30 s and when the page is focused (they change as you translate and transcribe). */
+function AllowanceLine({ free }: { free: boolean }) {
+  const [a, setA] = useState<User["access"]["allowance"]>(null);
+  useEffect(() => {
+    const load = () => api.me().then((u) => setA(u.access.allowance), () => undefined);
+    load();
+    const timer = window.setInterval(load, 30_000);
+    window.addEventListener("focus", load);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("focus", load);
+    };
+  }, []);
+  if (!a || a.words.limit === null) return null;
+  const parts = [`${a.words.used.toLocaleString()} of ${a.words.limit.toLocaleString()} words translated`];
+  if (a.transcribe_minutes.limit) parts.push(`${a.transcribe_minutes.used} of ${a.transcribe_minutes.limit} minutes transcribed`);
+  return (
+    <p className="small">
+      Today: {parts.join(" · ")}. Resets at midnight.
+      {free && " Free plan: recordings are saved as audio only; transcription is on the paid plan."}
+    </p>
+  );
+}
+
 export default function Language({
   tab,
   onTab,
-  freeLimit = null,
   canTranscribe = true,
 }: {
   tab: LanguageTab;
   onTab: (t: LanguageTab) => void;
-  freeLimit?: number | null;
   canTranscribe?: boolean;
 }) {
   const [opened, setOpened] = useState<Set<LanguageTab>>(() => new Set([tab]));
@@ -51,12 +73,7 @@ export default function Language({
           ))}
         </div>
         <p className="muted small">{current.description}</p>
-        {freeLimit !== null && (
-          <p className="small">
-            Free plan: {freeLimit} Translate requests a day. Recordings are saved as audio only; transcription and translating recordings are on the
-            paid plan.
-          </p>
-        )}
+        <AllowanceLine free={!canTranscribe} />
       </div>
       {opened.has("recordings") && <div hidden={tab !== "recordings"}><Recordings canTranscribe={canTranscribe} /></div>}
       {opened.has("translate") && <div hidden={tab !== "translate"}><Translate /></div>}

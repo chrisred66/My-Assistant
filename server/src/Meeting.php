@@ -112,6 +112,8 @@ final class Meeting
             }
             $language = null; // the rest: let the translator work it out
         }
+        $words = array_sum(array_map(fn ($r) => Allowance::words($r['source_text']), $rows));
+        Allowance::checkWords($userId, $words);
         $provider = Routing::translator();
         foreach (array_chunk($rows, 60) as $batch) {
             $lines = implode("\n", array_map(fn ($i, $r) => '[' . ($i + 1) . '] ' . str_replace("\n", ' ', $r['source_text']), array_keys($batch), $batch));
@@ -131,6 +133,7 @@ final class Meeting
                 $done[] = ['seq' => (int) $r['seq'], 'part' => (int) $r['part'], 'english' => $en];
             }
         }
+        Allowance::addWords($userId, $words);
         Db::run('UPDATE transcripts SET translate_provider = ?, translate_model = ?, source_lang = COALESCE(?, source_lang) WHERE id = ?',
             [$provider->name(), $provider->defaultModel(), $language, $transcriptId]);
         self::rebuild($transcriptId);
@@ -210,6 +213,7 @@ final class Meeting
     /** Calls the diarization model, with up to four known speakers' voice samples. */
     private static function diarize(int $userId, int $recordingId, string $audio, string $mime, string $name, string $feature): array
     {
+        Allowance::checkTranscribe($userId); // meetings share the daily transcription time with recordings
         $parts = [
             ['file', $audio, $name, $mime],
             ['model', self::model()],

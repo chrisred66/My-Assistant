@@ -48,9 +48,53 @@ export interface User {
     transcribe: boolean; // speech-to-text; not on the free plan (recordings are saved as audio)
     usage: boolean; // Usage page, AI routing, desktop ball (Super Admin)
     manage_users: boolean;
-    translations: { limit: number; used: number } | null; // free plan's daily allowance
+    /** Today's allowances (null limit: unlimited): translation words (Free 300, Paid 3,000) and transcription minutes (Paid 60). */
+    allowance: { words: Allowance; transcribe_minutes: Allowance } | null;
     pt: Record<PtModule, PtLevel>;
   };
+}
+
+export interface Allowance {
+  limit: number | null;
+  used: number;
+}
+
+/** Audio storage: 125 MB per person, recordings and meetings together. */
+export interface StorageInfo {
+  used_bytes: number;
+  limit_bytes: number;
+}
+
+/** A recording whose audio was removed to stay within the storage allowance (its transcript stays). */
+export interface RemovedAudio {
+  id: number;
+  title: string;
+  created_at: string;
+}
+
+/** One device sign-in (Settings → Your devices). */
+export interface Device {
+  id: number;
+  device: string;
+  signed_in_at: string;
+  last_used_at: string | null;
+  expires_at: string;
+  current: boolean;
+}
+
+/** One entry of the activity log (Settings → Activity). */
+export interface ActivityEntry {
+  id: number;
+  created_at: string;
+  action: string;
+  target: string | null;
+  status: number | null;
+  role: string | null;
+  ip: string | null;
+  device: string | null;
+  user_id: number | null;
+  user_name: string | null;
+  viewed_by_name: string | null;
 }
 
 export interface ManagedUser extends User {
@@ -570,6 +614,8 @@ export interface UploadResult {
   english?: string | null;
   transcribe_error?: string; // the file was saved; transcription can be retried
   translate_error?: string; // the transcript was saved; translation can be retried
+  audio_removed?: RemovedAudio[]; // older audio removed to stay within the storage allowance
+  storage?: StorageInfo;
 }
 
 export interface TranscribeResult {
@@ -603,6 +649,8 @@ export interface LiveFinishResult {
   text: string;
   english: string | null;
   language: string | null;
+  audio_removed?: RemovedAudio[];
+  storage?: StorageInfo;
 }
 
 /** Meeting mode: one speaker turn of a live chunk. */
@@ -685,6 +733,8 @@ export interface Recording {
   duration_sec: number | null;
   recorded_at: string | null;
   created_at: string;
+  has_audio: boolean;
+  audio_removed_at: string | null; // audio removed to stay within the storage allowance
   transcript_id: number | null;
   language: string | null;
   source_text: string | null;
@@ -861,6 +911,28 @@ async function request<T>(method: string, path: string, body?: unknown, baseUrl 
   return data as T;
 }
 
+/** A file download (e.g. a recording's audio): its bytes and the server's file name. */
+async function download(path: string): Promise<{ bytes: Uint8Array; name: string }> {
+  const headers: Record<string, string> = {};
+  if (config.token) headers.Authorization = `Bearer ${config.token}`;
+  if (config.viewAs) {
+    headers["X-View-As"] = String(config.viewAs.userId);
+    if (config.viewAs.role) headers["X-View-As-Role"] = config.viewAs.role;
+  }
+  const res = await fetch(`${config.baseUrl}${path}`, { method: "GET", headers });
+  if (!res.ok) {
+    let message = `HTTP ${res.status} from ${path}`;
+    try {
+      message = String((JSON.parse(await res.text()) as { error?: string }).error ?? message);
+    } catch {
+      // not JSON
+    }
+    throw new ApiError(res.status, message);
+  }
+  const name = /filename="([^"]+)"/.exec(res.headers.get("content-disposition") ?? "")?.[1] ?? "recording";
+  return { bytes: new Uint8Array(await res.arrayBuffer()), name };
+}
+
 function tripQuery(f: object): string {
   const q = new URLSearchParams();
   for (const [k, v] of Object.entries(f)) if (v !== undefined && v !== null && v !== "") q.set(k, String(v));
@@ -973,7 +1045,15 @@ export const api = {
   viewableUsers: async (): Promise<ManagedUser[]> =>
     (await request<ManagedUser[]>("GET", "/users", undefined, config.baseUrl, true)).filter((u) => u.account_role !== "super_admin" && !u.disabled),
 
-  changePassword: (current: string, next: string) => request<{ ok: boolean }>("POST", "/auth/password", { current, new: next }),
+  /** Changes your password; the server then signs out every device, this one too. */
+  changePassword: (current: string, next: string) =>
+    request<{ ok: boolean; signed_out?: boolean }>("POST", "/auth/password", { current, new: next }),
+  devices: () => request<Device[]>("GET", "/auth/devices"),
+  signOutDevice: (id: number) => request<Device[]>("DELETE", `/auth/devices/${id}`),
+  signOutOtherDevices: () => request<Device[]>("POST", "/auth/devices/sign-out-others"),
+  /** The activity log (Super Admin: everyone; Admins: accounts below Admin). */
+  activity: (f: { user?: number; from?: string; to?: string; limit?: number; offset?: number }) =>
+    request<{ total: number; rows: ActivityEntry[] }>("GET", `/activity?${tripQuery(f)}`),
 
   // Owner only.
   users: () => request<ManagedUser[]>("GET", "/users"),
@@ -1155,6 +1235,9 @@ export const api = {
   translateTranscript: (transcriptId: number, model?: string) =>
     request<TranslateTranscriptResult>("POST", `/transcripts/${transcriptId}/translate`, model ? { model } : {}),
 
+  recordingStorage: () => request<StorageInfo>("GET", "/recordings/storage"),
+  /** A recording's audio, to save on this device. */
+  recordingAudio: (id: number) => download(`/recordings/${id}/audio`),
   /** Rename one of your recordings. */
   renameRecording: (id: number, title: string) => request<{ ok: boolean }>("POST", `/recordings/${id}`, { title }),
   /** Delete one of your recordings, with its audio and transcripts. */
@@ -1172,6 +1255,7 @@ export const api = {
       ...r,
       id: num(r.id),
       size_bytes: num(r.size_bytes),
+      has_audio: Boolean(Number(r.has_audio)),
       duration_sec: r.duration_sec === null ? null : num(r.duration_sec),
       transcript_id: r.transcript_id === null ? null : num(r.transcript_id),
     })),

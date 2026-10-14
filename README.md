@@ -13,8 +13,9 @@ A personal toolkit. The desktop app is called **My Assistant**.
   [PC2005-cloud](https://github.com/PC2005-cloud/dsh-pet); see [Credits and sources](#credits-and-sources)).
 
 ```
-Phone / laptop app ──(Tailscale)──► always-on desktop
-                                     ├─ server/  PHP API (Apache, XAMPP)
+Apps ──HTTPS──► Cloudflare ──(tunnel, no open ports)──► always-on desktop
+                https://<your-tunnel-domain>     ├─ Apache site 127.0.0.1:8090: server/public only
+You (admin) ──(Tailscale)────────────────────────────────►├─ server/  PHP API (Apache, XAMPP)
                                      │    └─ AI relay: holds the API keys, logs every call's tokens
                                      ├─ MariaDB (localhost only): chrismanager + gba_database (PT data)
                                      └─ server/storage/ (recordings, caches)
@@ -63,9 +64,21 @@ missing).
 1. Same steps as above, with `DB_NAME=chrismanager`, `APP_ENV=production` and `APP_DEBUG=false`.
 2. XAMPP Control Panel → tick **Service** for Apache and MySQL so they start at boot.
 3. Set a MySQL root password and keep MySQL on localhost (`bind-address=127.0.0.1` in `my.ini`).
-4. Install [Tailscale](https://tailscale.com) on the desktop, laptop and phone. The app then reaches
-   `http://<desktop-tailscale-name>/My-Assistant/server/public`. Don't port-forward on the router.
-5. Windows Update → set active hours. BIOS → "restore on AC power loss".
+4. **Public address (Cloudflare Tunnel)**: people reach the server at `https://<your-tunnel-domain>`, with no
+   ports opened on the router. Pieces:
+   - `C:\xampp\apache\conf\extra\httpd-my-assistant.conf` (included from `httpd-vhosts.conf`): an Apache site on
+     `127.0.0.1:8090` that serves `server/public` only and sends *every* request to the API, so XAMPP's server-wide
+     aliases (`/phpmyadmin`, `/webalizer`, `/cgi-bin`, …), which only check "from this machine" (as tunnel traffic is),
+     can't be reached.
+   - Tunnel `my-assistant`: config and credentials in `C:\ProgramData\cloudflared` (SYSTEM, Administrators, owner),
+     run by the **Cloudflared** Windows service with `tunnel --config … run`. Set up (and repaired) by
+     `server\bin\setup-tunnel-service.ps1` in an administrator PowerShell; it refuses to start the tunnel if anything
+     but the API answers on the site.
+   - Cloudflare: SSL/TLS → Edge Certificates → **Always Use HTTPS** on. `TRUSTED_PROXY_HEADER=CF-Connecting-IP` in
+     `.env` gives the sign-in lockout and activity log the real visitor IP (trusted only for requests from the tunnel).
+   - [Tailscale](https://tailscale.com) stays for your own admin access to the desktop.
+5. Windows Update → set active hours. BIOS → "restore on AC power loss". A UPS with its USB cable connected lets
+   Windows shut down cleanly in a long power cut.
 
 Deploying an update: `git pull`, `composer install`, then `php bin\migrate.php`.
 
@@ -75,9 +88,10 @@ Deploying an update: `git pull`, `composer install`, then `php bin\migrate.php`.
 |---|---|---|
 | Daily 08:00 ("My Assistant Daily Feed") | `C:\xampp\php\php-win.exe C:\xampp\htdocs\My-Assistant\server\bin\daily-feed.php` | Builds everyone's Daily Feed (skips feeds already built) |
 | Nightly | `C:\xampp\php\php.exe C:\xampp\htdocs\My-Assistant\server\bin\sync-usage.php 3` | Pulls the last 3 days of usage and billed cost from Anthropic and OpenAI |
-| Nightly | `C:\xampp\mysql\bin\mysqldump.exe -u chrismanager -p<pass> chrismanager > D:\backups\chrismanager-%date:~0,4%%date:~5,2%%date:~8,2%.sql` | Database backup (also back up `gba_database`) |
+| Daily 02:30 ("My Assistant Backup") | `C:\xampp\php\php-win.exe C:\xampp\htdocs\My-Assistant\server\bin\backup.php` | Both databases (compressed dumps, kept `BACKUP_KEEP_DAYS`, default 14) and a mirror of the recordings to `BACKUP_DIR` (default `D:\backups\my-assistant`, a separate drive); log in `backup.log` there |
 
-Also copy `server\storage\recordings` somewhere off the machine.
+The backups are on this PC's second drive, which covers a failed system drive, a corrupted database or a mistake; copy
+`D:\backups\my-assistant` somewhere off the machine now and then (a USB drive kept elsewhere, or a cloud folder).
 
 ### Other scripts
 
@@ -86,6 +100,8 @@ Also copy `server\storage\recordings` somewhere off the machine.
 | `bin/migrate.php` | Applies new migrations to both databases |
 | `bin/create-user.php <email>` | Creates an account (the first one is the Super Admin) |
 | `bin/backfill-deepseek-cost.php [--reprice]` | Prices DeepSeek calls logged without a cost (`--reprice`: all of them again) |
+| `bin/backup.php` | Runs the backup now |
+| `bin/setup-tunnel-service.ps1` | (Re)sets up the tunnel service; administrator PowerShell |
 
 ## Users and roles
 
@@ -93,10 +109,10 @@ People sign in with a username or email. Settings → Users manages accounts.
 
 | Group | General Tool | PT Management | Daily Feed | Usage, ball, pet | Manages users |
 |---|---|---|---|---|---|
-| Super Admin (first account) | ✓ | everything | one feed per topic | ✓ | everyone |
-| Admin | ✓ | everything | one feed per topic | – | users below Admin |
-| Paid User | ✓ (incl. meetings, learning from edits) | – | one feed per topic, earlier days | – | – |
-| Free User | record (audio only), 10 Translate requests a day | – | one combined feed, today only | – | – |
+| Super Admin (first account) | ✓, no daily limits | everything | one feed per topic | ✓ | everyone |
+| Admin | as Paid | only with a PT role of its own | one feed per topic | – | users below Admin |
+| Paid User | ✓ incl. meetings and learning from edits; 3,000 words of translation and 60 minutes of transcription a day | – | one feed per topic, earlier days | – | – |
+| Free User | record (audio only), 300 words of translation a day | – | one combined feed, today only | – | – |
 | PT Big Man | as Free, unless given Paid | all modules, full rights | as their plan | – | – |
 | PT Manager | as Free, unless given Paid | own module: add, edit, close, delete, settings | as their plan | – | – |
 | PT Low Man | as Free, unless given Paid | own module: view and add | as their plan | – | – |
@@ -109,6 +125,15 @@ People sign in with a username or email. Settings → Users manages accounts.
   each group sees.
 - The Super Admin can **view as** another account (button next to their name): the app shows that account's pages and
   data, without signing in as it.
+- **Daily allowances** (reset at midnight): translation counts the words of the original text (Chinese and Japanese:
+  two characters per word; English is never translated); transcription counts minutes of audio, live recordings,
+  transcribed recordings and meetings together. **Storage**: 125 MB of audio per person; when a new recording goes over,
+  the oldest recordings' audio is removed (their transcripts stay), and "Save audio…" keeps a copy on your own device.
+- **Security**: 5 wrong passwords for a login (or 20 from one network) within 15 minutes lock it for 15 minutes.
+  Changing your password signs you out everywhere; Settings → Your devices lists your sign-ins and signs any out.
+  Settings → **Activity** (Super Admin, and Admins for accounts below Admin) shows every change and sign-in, kept for a
+  year; only the action is logged, never what was typed or recorded. Only the Super Admin can choose a different AI
+  model for a request.
 
 ## AI providers
 
@@ -116,7 +141,7 @@ The server holds the API keys; the app never chooses a provider. Every call's to
 
 | Job | Provider | Setting |
 |---|---|---|
-| Translation | Claude | `TRANSLATE_PROVIDER`, `ANTHROPIC_MODEL` |
+| Translation | DeepSeek (`anthropic` for Claude) | `TRANSLATE_PROVIDER`, `DEEPSEEK_MODEL` |
 | Transcription (speech → text) | OpenAI | `OPENAI_TRANSCRIBE_MODEL` |
 | Meetings (speaker labels) | OpenAI | `OPENAI_DIARIZE_MODEL` |
 | Light tasks (e.g. language detection) | DeepSeek | `LIGHT_PROVIDER`, `DEEPSEEK_MODEL` |
@@ -165,7 +190,7 @@ Council's notices), cached in `server/storage/cn-holidays/`.
 
 ## API
 
-Base address: `http://<server>/My-Assistant/server/public`. Every call except `/health` and `/auth/login` needs
+Base address: `https://<your-tunnel-domain>` (on the server PC itself also `http://localhost/My-Assistant/server/public`). Every call except `/health` and `/auth/login` needs
 `Authorization: Bearer <token>`. Responses are JSON.
 
 **Accounts**
@@ -177,17 +202,21 @@ Base address: `http://<server>/My-Assistant/server/public`. Every call except `/
 | POST | `/auth/logout` | Revokes the current token |
 | GET | `/auth/me` | Current user, `roles`, `active_role` and `access` (what the account can do) |
 | POST | `/auth/role` | `{role}`: switches the active role |
-| POST | `/auth/profile` · `/auth/password` | Sets your display name · changes your password |
+| POST | `/auth/profile` · `/auth/password` | Sets your display name · changes your password (signs out every device) |
+| GET · DELETE | `/auth/devices` · `/auth/devices/{id}` | Your sign-ins · signs one out |
+| POST | `/auth/devices/sign-out-others` | Signs out every device but this one |
+| GET | `/activity` | `?user&from&to&limit&offset`: the activity log (Super Admin; Admins for accounts below Admin) |
 | GET · POST | `/users` · `/users/{id}` | Lists, creates and edits accounts (Super Admin and Admin) |
 
 **General Tool**
 
 | Method | Path | Does |
 |---|---|---|
-| POST | `/ai/translate` | `{text}`: Arabic → English, saved as a transcript |
+| POST | `/ai/translate` | `{text}`: Arabic → English, saved as a transcript (counts against the word allowance) |
 | POST | `/live`, `/live/{id}/chunk`, `/live/{id}/finish` | Live recording: start, transcribe and translate each short chunk, save the audio |
 | POST | `/recordings` | Multipart `audio`, `title?`, `transcribe=1?`: stores a recording, optionally transcribed and translated |
 | GET | `/recordings` | Your latest 200 recordings with transcript and English |
+| GET | `/recordings/storage` · `/recordings/{id}/audio` | Your storage used of 125 MB · a recording's audio file, to save locally |
 | POST · DELETE | `/recordings/{id}` | Renames · deletes a recording and its audio |
 | POST | `/recordings/{id}/transcribe` | Transcribes a saved recording again |
 | GET | `/transcripts` | Your latest 200 transcripts |

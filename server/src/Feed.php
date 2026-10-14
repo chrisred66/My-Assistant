@@ -139,9 +139,24 @@ final class Feed
 
     /**
      * Builds a user's feeds for a date (today's unless given). Existing feeds for that date are kept unless $force.
+     * Only one build per user runs at a time (a build takes minutes, and the 8:00 job and the app's catch-up could
+     * otherwise both start one, paying twice and colliding): a second caller gets 0 straight away.
      * @return int feeds built
      */
     public static function generate(array $user, ?string $date = null, bool $force = false): int
+    {
+        $lock = 'my-assistant-feed:' . (int) $user['id'];
+        if ((int) (Db::one('SELECT GET_LOCK(?, 0) AS ok', [$lock])['ok'] ?? 0) !== 1) {
+            return 0; // already being built
+        }
+        try {
+            return self::build($user, $date, $force);
+        } finally {
+            Db::run('SELECT RELEASE_LOCK(?)', [$lock]);
+        }
+    }
+
+    private static function build(array $user, ?string $date, bool $force): int
     {
         $date ??= date('Y-m-d');
         $userId = (int) $user['id'];

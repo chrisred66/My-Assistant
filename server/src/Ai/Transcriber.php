@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace ChrisManager\Ai;
 
+use ChrisManager\Allowance;
 use ChrisManager\Env;
 use ChrisManager\Usage;
 
@@ -30,6 +31,7 @@ final class Transcriber
         ?string $prompt = null,
         string $feature = 'transcribe',
     ): array {
+        Allowance::checkTranscribe($userId); // today's transcription time (Paid: 60 minutes)
         $model = Env::get('OPENAI_TRANSCRIBE_MODEL', 'whisper-1');
 
         // OpenAI infers the format from the file name, and PHP's upload temp files have none ("php1A2B.tmp").

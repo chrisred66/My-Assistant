@@ -11,6 +11,56 @@ Unreleased to the version and date, and bump the app version in
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-14
+
+Ready for other users: daily allowances, storage limits, an activity log, a public HTTPS address, DeepSeek
+translation, and the Android app.
+
+### Added
+- **Android app** (`src-tauri/gen/android`, `tauri.android.conf.json`): one window and no desktop extras (usage
+  ball, desktop pet, online meetings, Save audio), microphone and notification permissions, release builds signed
+  with the key in `C:\Users\User\.android-keys` (named in the git-ignored `gen/android/keystore.properties`).
+- **Phone layout**: the app keeps clear of the status bar and gesture bar (edge-to-edge Android), and on narrow
+  screens the top bar shows only the pages (plus the role switcher for accounts with several roles); the theme switch
+  and account are in Settings. The narrow-screen rules had been overridden by the theme, so the brand and footer
+  crowded the bar.
+- **Daily allowances** (`Allowance`, migration `013_access_guards.sql`): translation words per day (Free 300, Paid
+  3,000; the original text's words, Chinese and Japanese two characters per word) across the Translate page,
+  recordings, live text and meetings, and 60 minutes of transcription a day on the Paid plan (live, recordings and
+  meetings together, from the usage log). They replace the Free plan's 10 Translate requests a day (`Quota` removed).
+  The General Tool shows today's use; the Super Admin isn't limited.
+- **Audio storage allowance** (`Storage`): 125 MB per person, recordings and meetings together. A new recording that
+  goes over removes the oldest recordings' audio (transcripts stay, marked "audio removed"), and the app says which.
+  Recordings shows the storage used and has **Save audio…** (`GET /recordings/{id}/audio`, Tauri dialog plugin and a
+  `save_file` command) to keep a copy on your own device.
+- **Activity log** (`Activity`): every change, every sign-in attempt, and everything opened while the Super Admin views
+  as someone, with role, result, IP and device (never request bodies); kept a year. Settings → Activity for the Super
+  Admin, and for Admins (accounts below Admin). `TRUSTED_PROXY_HEADER` reads the real IP behind a tunnel.
+- **Your devices** (Settings): where you're signed in; sign out one device or all others (`/auth/devices`).
+- **Public address** `https://<your-tunnel-domain>` through a Cloudflare Tunnel (no router ports): an
+  API-only Apache site on `127.0.0.1:8090` that routes every request to the API, so XAMPP's `/phpmyadmin` and other
+  server-wide aliases can't be reached through it (they trust "from this machine", which tunnel traffic is); the
+  `Cloudflared` service set up by `bin/setup-tunnel-service.ps1`; HTTPS forced at Cloudflare. The app's default server
+  address is now the public one.
+- **Nightly backups** (`bin/backup.php`, Task Scheduler "My Assistant Backup", 02:30): both databases as compressed
+  dumps (kept 14 days) and a mirror of the recordings, on the second drive (`D:\backups\my-assistant`).
+- **Sign-in lockout**: 5 failed attempts for a login (or 20 from one IP) in 15 minutes lock it for 15 minutes; a login
+  that doesn't exist now takes as long to refuse as a wrong password.
+
+### Fixed
+- Daily Feed: the 8:00 job and the app's catch-up could build the same feed at once (paying twice; the second
+  failed on a duplicate entry). Builds now take a per-user lock (`GET_LOCK`); a second caller returns at once.
+
+### Changed
+- **Translation goes to DeepSeek** (`TRANSLATE_PROVIDER=deepseek`; about a fortieth of Claude Opus's cost per word).
+  Only the Super Admin can choose another model for a request (a `claude-`, `gpt-` or `deepseek-` model goes to its own
+  provider; `Routing::translatorFor`); anyone else's `model` is ignored.
+- **Changing your password signs you out everywhere**, this device included.
+- `TRUSTED_PROXY_HEADER` is believed only for requests from this machine (the tunnel), so devices on the home network
+  or Tailscale can't fake an IP to get round the sign-in lockout.
+- **Admin** no longer has every PT module: Admins manage accounts below Admin and use the General Tool as Paid, and
+  see PT only with a PT role of their own (which can now be set for Admins in Settings → Users).
+
 ## [0.3.0] - 2026-10-13
 
 PT Management modules, Daily Feed, meetings, user groups and roles, provider usage and balances, the usage ball and

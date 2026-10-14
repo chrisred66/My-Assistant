@@ -3,7 +3,8 @@
 // arrives a moment later from a separate call. Speakers can be named while recording or afterwards.
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ErrorText } from "../components/common";
-import { api, type MeetingSpeaker, type MeetingTurn } from "../lib/api";
+import { api, type MeetingSpeaker, type MeetingTurn, type RemovedAudio } from "../lib/api";
+import { isMobile } from "../lib/platform";
 import { startActivity } from "../lib/activity";
 import { errorMessage, formatDuration, toSqlDateTime } from "../lib/format";
 import { LiveRecorder, outputDevices, type LiveChunk } from "../lib/liveRecorder";
@@ -33,8 +34,9 @@ const readDevice = () => {
   }
 };
 
-export default function MeetingPanel({ onSaved }: { onSaved: (recordingId: number) => void }) {
-  const [source, setSource] = useState<Source>("online");
+export default function MeetingPanel({ onSaved }: { onSaved: (recordingId: number, removed?: RemovedAudio[]) => void }) {
+  // Phones can't record what other apps play, so meetings there are in person (microphone).
+  const [source, setSource] = useState<Source>(isMobile ? "in-person" : "online");
   const [devices, setDevices] = useState<{ name: string; default: boolean }[]>([]);
   const [device, setDevice] = useState(readDevice); // "" = the default output
   const [withMic, setWithMic] = useState(true);
@@ -173,10 +175,10 @@ export default function MeetingPanel({ onSaved }: { onSaved: (recordingId: numbe
       await whenIdle();
       const ext = recording.mimeType.includes("ogg") ? "ogg" : recording.mimeType.includes("mp4") ? "m4a" : "webm";
       const stamp = toSqlDateTime(new Date()).replace(/[: ]/g, "-");
-      await api.liveFinish(id, recording.audio, `meeting-${stamp}.${ext}`, recording.durationMs / 1000);
+      const done = await api.liveFinish(id, recording.audio, `meeting-${stamp}.${ext}`, recording.durationMs / 1000);
       setSavedId(id);
       setTitle("");
-      onSaved(id);
+      onSaved(id, done.audio_removed);
     } catch (e) {
       setError(`The meeting couldn't be saved: ${errorMessage(e)}`);
     } finally {
@@ -241,17 +243,19 @@ export default function MeetingPanel({ onSaved }: { onSaved: (recordingId: numbe
         <span className="muted small">Live text with speakers · paid plan</span>
       </div>
       <div className="row wrap">
-        <div className="field inline">
-          <span>Meeting</span>
-          <div className="segmented" role="group" aria-label="Meeting type">
-            <button className={source === "online" ? "on" : ""} aria-pressed={source === "online"} onClick={() => setSource("online")} disabled={!idle}>
-              Online
-            </button>
-            <button className={source === "in-person" ? "on" : ""} aria-pressed={source === "in-person"} onClick={() => setSource("in-person")} disabled={!idle}>
-              In person
-            </button>
+        {!isMobile && (
+          <div className="field inline">
+            <span>Meeting</span>
+            <div className="segmented" role="group" aria-label="Meeting type">
+              <button className={source === "online" ? "on" : ""} aria-pressed={source === "online"} onClick={() => setSource("online")} disabled={!idle}>
+                Online
+              </button>
+              <button className={source === "in-person" ? "on" : ""} aria-pressed={source === "in-person"} onClick={() => setSource("in-person")} disabled={!idle}>
+                In person
+              </button>
+            </div>
           </div>
-        </div>
+        )}
         <label className="field inline grow">
           <span>Title</span>
           <input value={title} onChange={(e) => setTitle(e.target.value)} maxLength={255} placeholder="Optional" disabled={!idle} />
@@ -290,7 +294,7 @@ export default function MeetingPanel({ onSaved }: { onSaved: (recordingId: numbe
           Also record my microphone. Records what this computer plays (the meeting app) — use headphones so the others aren't picked up twice.
         </label>
       ) : (
-        <p className="muted small">Records the microphone. Place the computer where it can hear everyone.</p>
+        <p className="muted small">Records the microphone. Place the {isMobile ? "phone" : "computer"} where it can hear everyone.</p>
       )}
 
       {phase === "recording" && (

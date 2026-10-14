@@ -9,6 +9,7 @@ use ChrisManager\Ai\Language;
 use ChrisManager\Ai\Routing;
 use ChrisManager\Ai\Transcriber;
 use ChrisManager\Ai\Translator;
+use ChrisManager\Activity;
 use ChrisManager\Auth;
 use ChrisManager\Db;
 use ChrisManager\Env;
@@ -16,8 +17,8 @@ use ChrisManager\Feed;
 use ChrisManager\HttpException;
 use ChrisManager\Meeting;
 use ChrisManager\ProviderUsage;
-use ChrisManager\Quota;
 use ChrisManager\Request;
+use ChrisManager\Storage;
 use ChrisManager\Usage;
 
 $router->get('/health', fn () => ['ok' => true, 'time' => date('c')]);
@@ -41,11 +42,30 @@ $router->get('/auth/me', fn (Request $r) => Auth::publicUser(Auth::requireUser($
 // Body: {role}. Act in another of your roles (see Auth::availableRoles) on this sign-in; returns the user in that role.
 $router->post('/auth/role', fn (Request $r) => Auth::publicUser(Auth::switchRole($r, (string) $r->input('role', ''))));
 
-// Body: {current, new}. Any signed-in user, for their own account.
+// Body: {current, new}. Any signed-in user, for their own account. Signs out every device, this one too.
 $router->post('/auth/password', function (Request $r) {
     Auth::requireOwnSession(Auth::requireUser($r));
     Auth::changePassword($r->userId(), (string) $r->input('current', ''), (string) $r->input('new', ''));
-    return ['ok' => true];
+    return ['ok' => true, 'signed_out' => true];
+});
+
+// Where you're signed in (one row per device sign-in).
+$router->get('/auth/devices', fn (Request $r) => Auth::devices(Auth::requireOwnSession(Auth::requireUser($r))));
+
+// Signs one of your devices out.
+$router->delete('/auth/devices/{id}', function (Request $r) {
+    $user = Auth::requireOwnSession(Auth::requireUser($r));
+    if (Auth::signOutDevices($user, (int) $r->params['id']) === 0) {
+        throw new HttpException(404, 'Device not found');
+    }
+    return Auth::devices($user);
+});
+
+// Signs out every device except this one.
+$router->post('/auth/devices/sign-out-others', function (Request $r) {
+    $user = Auth::requireOwnSession(Auth::requireUser($r));
+    Auth::signOutDevices($user, null);
+    return Auth::devices($user);
 });
 
 // Body: {display_name}. Any signed-in user, for their own account; empty clears it (the login is shown instead).
@@ -170,6 +190,15 @@ $router->post('/users/{id}', function (Request $r) use ($groupFields) {
     return ['ok' => true];
 });
 
+// Activity log (Settings → Activity): the Super Admin sees everyone, Admins accounts below Admin.
+// ?user=&from=YYYY-MM-DD&to=YYYY-MM-DD&limit=&offset=
+$router->get('/activity', function (Request $r) {
+    $me = Auth::requireUserAdmin($r);
+    $date = fn ($k) => preg_match('/^\d{4}-\d{2}-\d{2}$/', (string) $r->query($k, '')) ? (string) $r->query($k) : null;
+    return Activity::list($me, $r->query('user') !== null && $r->query('user') !== '' ? (int) $r->query('user') : null,
+        $date('from'), $date('to'), (int) $r->query('limit', 100), (int) $r->query('offset', 0));
+});
+
 // --- AI routing -----------------------------------------------------------
 // Providers are fixed per job on the server (see Ai\Routing); clients can't pick one.
 
@@ -180,15 +209,18 @@ $router->get('/ai/routing', function (Request $r) {
 
 // --- Translation ----------------------------------------------------------
 
-// Body: {text, model?}. Arabic -> English through the translation provider (Claude).
-$router->post('/ai/translate', function (Request $r) {
-    $user = Auth::requireGeneral($r);
+/** A model the caller chose: honoured only for the Super Admin's own sign-in (not while viewing as someone). */
+$chosenModel = function (Request $r): ?string {
+    $u = $r->user;
+    $super = $u !== null && ($u['account_role'] ?? $u['role']) === 'super_admin' && !isset($u['viewed_by']);
+    return $super ? ((string) $r->input('model', '') ?: null) : null;
+};
+
+// Body: {text, model? (Super Admin only)}. Arabic -> English; counts against the daily word allowance (Allowance).
+$router->post('/ai/translate', function (Request $r) use ($chosenModel) {
+    Auth::requireGeneral($r);
     $text   = (string) $r->input('text', '');
-    // Free plan: a new Translate request needs a slot today (each request is its own item).
-    if (!Quota::allows($user, 'translate:new')) {
-        throw new HttpException(429, Quota::message());
-    }
-    $result = Translator::translate($r->userId(), $text, $r->input('model') ?: null);
+    $result = Translator::translate($r->userId(), $text, $chosenModel($r));
 
     $id = Db::insert('transcripts', [
         'user_id'            => $r->userId(),
@@ -197,7 +229,6 @@ $router->post('/ai/translate', function (Request $r) {
         'translate_provider' => Routing::translator()->name(),
         'translate_model'    => $result->model,
     ]);
-    Quota::consume($user, "translate:{$id}");
 
     return [
         'id'          => $id,
@@ -258,19 +289,13 @@ $storeAudio = function (Request $r, array $audio) use ($recordingFile): string {
 $rebuildTranscript = fn (int $transcriptId): array => Meeting::rebuild($transcriptId);
 
 /** Translates a transcript to English (skipped when it is English) and stores the result. */
-$translateTranscript = function (Request $r, int $transcriptId, string $text, ?string $language): array {
-    $rec = Db::one('SELECT recording_id FROM transcripts WHERE id = ?', [$transcriptId]);
-    $ref = $rec !== null && $rec['recording_id'] !== null ? "recording:{$rec['recording_id']}" : "translate:{$transcriptId}";
-    Quota::check($r->user, $ref);
+$translateTranscript = function (Request $r, int $transcriptId, string $text, ?string $language) use ($chosenModel): array {
     $lined = Language::sentenceLines($text);
     if ($lined !== trim($text) && Db::one('SELECT 1 FROM transcript_segments WHERE transcript_id = ? LIMIT 1', [$transcriptId]) === null) {
         Db::run('UPDATE transcripts SET source_text = ? WHERE id = ?', [$lined, $transcriptId]);
         $text = $lined;
     }
-    $t = Translator::toEnglish($r->userId(), $text, $language, $r->input('model') ?: null);
-    if ($t['model'] !== null) {
-        Quota::consume($r->user, $ref); // only when something was actually translated (English is skipped)
-    }
+    $t = Translator::toEnglish($r->userId(), $text, $language, $chosenModel($r));
     Db::run(
         'UPDATE transcripts SET translated_text = ?, translate_provider = ?, translate_model = ?,
                 source_lang = COALESCE(?, source_lang) WHERE id = ?',
@@ -283,8 +308,11 @@ $translateTranscript = function (Request $r, int $transcriptId, string $text, ?s
 // (and any live segments) and clears the old translation.
 $transcribeRecording = function (Request $r, array $rec) use ($recordingFile): array {
     if ($rec['file_path'] === '') {
-        throw new HttpException(409, 'This recording has no saved audio');
+        throw new HttpException(409, $rec['audio_removed_at'] !== null
+            ? 'This recording\'s audio was removed to stay within your 125 MB of storage'
+            : 'This recording has no saved audio');
     }
+    \ChrisManager\Allowance::checkTranscribe($r->userId(), $rec['duration_sec'] !== null ? (float) $rec['duration_sec'] : null);
     if (($rec['kind'] ?? 'recording') === 'meeting') {
         $t  = Db::one('SELECT id FROM transcripts WHERE recording_id = ? ORDER BY id DESC LIMIT 1', [$rec['id']]);
         $id = $t !== null ? (int) $t['id'] : Db::insert('transcripts', ['user_id' => $r->userId(), 'recording_id' => $rec['id'], 'source_text' => '']);
@@ -322,7 +350,7 @@ $transcribeRecording = function (Request $r, array $rec) use ($recordingFile): a
 // "transcribe" also translates to English when the speech isn't English ("translate"=1 is accepted as an alias).
 // Once the file is saved the upload succeeds; a failed step comes back as "transcribe_error" /
 // "translate_error" so it can be retried on its own.
-$router->post('/recordings', function (Request $r) use ($uploadedAudio, $storeAudio, $ownRecording, $transcribeRecording, $translateTranscript) {
+$router->post('/recordings', function (Request $r) use ($uploadedAudio, $storeAudio, $ownRecording, $transcribeRecording, $translateTranscript, $recordingFile) {
     Auth::requireGeneral($r);
     $audio       = $uploadedAudio('audio');
     $recordingId = Db::insert('recordings', [
@@ -335,7 +363,9 @@ $router->post('/recordings', function (Request $r) use ($uploadedAudio, $storeAu
         'recorded_at'   => $r->input('recorded_at') ?: null,
     ]);
 
-    $response = ['id' => $recordingId];
+    // Over the 125 MB allowance: the oldest recordings' audio goes (their transcripts stay).
+    $response = ['id' => $recordingId, 'audio_removed' => Storage::enforce($r->userId(), $recordingId, $recordingFile),
+                 'storage' => Storage::summary($r->userId())];
     $wanted   = filter_var($r->input('transcribe', false), FILTER_VALIDATE_BOOLEAN)
              || filter_var($r->input('translate', false), FILTER_VALIDATE_BOOLEAN);
     if (!$wanted) {
@@ -385,10 +415,34 @@ $router->delete('/recordings/{id}', function (Request $r) use ($ownRecording, $r
     return ['ok' => true];
 });
 
+// Your audio storage: used and allowed (125 MB, recordings and meetings together).
+$router->get('/recordings/storage', function (Request $r) {
+    Auth::requireGeneral($r);
+    return Storage::summary($r->userId());
+});
+
+// The audio of one of your recordings, to save on your own device.
+$router->get('/recordings/{id}/audio', function (Request $r) use ($ownRecording, $recordingFile) {
+    Auth::requireGeneral($r);
+    $rec = $ownRecording($r, (int) $r->params['id']);
+    $file = $rec['file_path'] !== '' ? $recordingFile($rec) : '';
+    if ($file === '' || !is_file($file)) {
+        throw new HttpException(404, $rec['audio_removed_at'] !== null ? 'This recording\'s audio was removed to stay within your storage' : 'No audio saved for this recording');
+    }
+    $ext = pathinfo($file, PATHINFO_EXTENSION);
+    $name = preg_replace('/[^\w\- ]+/u', '', $rec['title'] !== '' ? $rec['title'] : 'recording-' . $rec['id']) ?: 'recording';
+    header('Content-Type: ' . ($rec['mime_type'] ?: 'application/octet-stream'));
+    header('Content-Length: ' . filesize($file));
+    header('Content-Disposition: attachment; filename="' . $name . '.' . $ext . '"');
+    readfile($file);
+    exit;
+});
+
 $router->get('/recordings', function (Request $r) {
     Auth::requireGeneral($r);
     return Db::all(
         'SELECT r.id, r.kind, r.title, r.original_name, r.mime_type, r.size_bytes, r.duration_sec, r.recorded_at, r.created_at,
+                r.file_path <> \'\' AS has_audio, r.audio_removed_at,
                 t.id AS transcript_id, t.source_lang AS language, t.source_text, t.translated_text
            FROM recordings r
            LEFT JOIN transcripts t ON t.id = (SELECT MAX(t2.id) FROM transcripts t2 WHERE t2.recording_id = r.id)
@@ -545,16 +599,12 @@ $router->post('/live/{id}/chunk', function (Request $r) use ($ownRecording, $liv
     $english  = null;
     $error    = null;
     try {
-        $quotaRef = "recording:{$rec['id']}";
-        if (!Quota::allows($r->user, $quotaRef)) {
-            throw new HttpException(429, Quota::message());
-        }
-        // Low effort keeps each chunk's translation quick enough to feel live.
+        // Low effort keeps each chunk's translation quick enough to feel live. Over the word allowance, the text still
+        // comes back, untranslated, with translate_error saying why.
         $t        = Translator::toEnglish($r->userId(), $heard['text'], $language, null, 'low', 'live_translate');
         $language = $t['language'];
         $english  = $t['english'];
         if ($t['model'] !== null) {
-            Quota::consume($r->user, $quotaRef);
             Db::run('UPDATE transcripts SET translate_provider = ?, translate_model = ? WHERE id = ?',
                 [$t['provider'], $t['model'], $transcriptId]);
         }
@@ -592,7 +642,9 @@ $router->post('/live/{id}/finish', function (Request $r) use ($ownRecording, $li
         'UPDATE recordings SET file_path = ?, original_name = ?, mime_type = ?, size_bytes = ?, duration_sec = ? WHERE id = ?',
         [$relative, $audio['name'], $audio['mime'], $audio['size'], is_numeric($duration) ? round((float) $duration, 2) : null, $rec['id']],
     );
-    return ['id' => (int) $rec['id'], 'transcript_id' => $transcriptId] + $rebuildTranscript($transcriptId);
+    return ['id' => (int) $rec['id'], 'transcript_id' => $transcriptId,
+            'audio_removed' => Storage::enforce($r->userId(), (int) $rec['id'], $recordingFile), 'storage' => Storage::summary($r->userId())]
+        + $rebuildTranscript($transcriptId);
 });
 
 // --- Meetings (paid plan) ----------------------------------------------------

@@ -8,13 +8,16 @@ namespace ChrisManager;
  * Email/username + password login that issues a per-device bearer token, plus permission checks (migration 005).
  *
  *   role super_admin: everything (Usage, AI routing, the desktop ball, all users)
- *   role admin:       everything except Usage/AI costs; manages users below Admin
+ *   role admin:       manages users below Admin, and the General Tool (Paid); PT only through its own PT role
  *   role user:        general_plan  none | free (record + 10 translations a day, no transcription) | paid → General Tool
  *                     (PT users without a plan of their own get the General Tool as Free)
  *                     pt_role       none | big_man (all PT) | manager (own module, full) | staff (own module, view + add)
  *                     pt_module     operations | maintenance | planning (Fleet, Trials, Charging)
  *
  * PT checks are per module and level: view < add < manage (manage = edit, close, delete, settings).
+ *
+ * Sign-in: after LOCK_FAILURES failed attempts for a login (or LOCK_IP_FAILURES from one IP) within LOCK_MINUTES, that
+ * login (or IP) is locked for LOCK_MINUTES. A failed sign-in takes the same time whether or not the login exists.
  *
  * Roles: an account acts in one role at a time (migration 006, kept per token). The Super Admin has every role;
  * others have the roles their groups give (a General Tool plan, a PT role; Admins just "admin"). Checks run against
@@ -25,22 +28,53 @@ final class Auth
 {
     public const PT_MODULES = ['operations', 'maintenance', 'planning'];
     private const PT_LEVELS = ['none' => 0, 'view' => 1, 'add' => 2, 'manage' => 3];
-    public const FREE_TRANSLATIONS_PER_DAY = 10;
+    private const LOCK_FAILURES = 5;
+    private const LOCK_IP_FAILURES = 20;
+    private const LOCK_MINUTES = 15;
+    /** A real hash to check against when the login doesn't exist, so the reply takes the same time. */
+    private const DUMMY_HASH = '$2y$10$lUpzXrrK71XX8Yi7KlMpZutls3vY4LJ.rkhDoNsBSG1VBR2llwOda';
+
+    /** The signed-in user of this request (set by requireUser / switchRole), for checks deeper in the code. */
+    private static ?array $current = null;
+
+    public static function current(): ?array
+    {
+        return self::$current;
+    }
     private const USER_COLUMNS = 'u.id, u.email, u.username, u.display_name, u.role, u.general_plan, u.pt_role, u.pt_module';
 
     /** $identifier is an email address or a username. */
     public static function login(string $identifier, string $password, string $deviceName): array
     {
         $identifier = trim($identifier);
+        $key = mb_substr(strtolower($identifier), 0, 190);
+        $ip = Activity::ip();
+        $since = date('Y-m-d H:i:s', time() - self::LOCK_MINUTES * 60);
+        $byLogin = (int) Db::one('SELECT COUNT(*) AS n FROM login_attempts WHERE identifier = ? AND created_at > ?', [$key, $since])['n'];
+        $byIp = (int) Db::one('SELECT COUNT(*) AS n FROM login_attempts WHERE ip = ? AND created_at > ?', [$ip, $since])['n'];
+        if ($byLogin >= self::LOCK_FAILURES || $byIp >= self::LOCK_IP_FAILURES) {
+            Activity::event('sign-in locked', null, $key, 429);
+            throw new HttpException(429, 'Too many failed sign-ins. Try again in ' . self::LOCK_MINUTES . ' minutes.');
+        }
+
         $user = Db::one(
             'SELECT ' . self::USER_COLUMNS . ', u.password_hash, u.disabled_at
                FROM users u WHERE u.email = ? OR u.username = ? LIMIT 1',
             [strtolower($identifier), $identifier],
         );
-        if ($user === null || $user['disabled_at'] !== null || !password_verify($password, $user['password_hash'])) {
-            usleep(random_int(300_000, 700_000)); // slow down guessing
+        // Always check a password hash, so a login that doesn't exist answers as slowly as a wrong password.
+        $ok = password_verify($password, $user['password_hash'] ?? self::DUMMY_HASH) && $user !== null && $user['disabled_at'] === null;
+        if (!$ok) {
+            Db::insert('login_attempts', ['identifier' => $key, 'ip' => $ip]);
+            if (random_int(1, 100) === 1) {
+                Db::run('DELETE FROM login_attempts WHERE created_at < NOW() - INTERVAL 1 DAY');
+            }
+            Activity::event('sign-in failed', $user !== null ? (int) $user['id'] : null, $key, 401);
+            usleep(random_int(200_000, 400_000)); // slow down guessing
             throw new HttpException(401, 'Invalid login or password');
         }
+        Db::run('DELETE FROM login_attempts WHERE identifier = ?', [$key]);
+        Activity::event('sign-in', (int) $user['id'], mb_substr($deviceName, 0, 100), 200);
 
         $token   = bin2hex(random_bytes(32));
         $ttlDays = (int) Env::get('TOKEN_TTL_DAYS', '90');
@@ -144,14 +178,14 @@ final class Auth
             if (!in_array($role, self::availableRoles($account), true)) {
                 throw new HttpException(422, 'That account doesn\'t have that role');
             }
-            return $req->user = self::withRole($account, $role) + ['token_id' => $acting['token_id'], 'viewed_by' => $acting['viewed_by']];
+            return self::$current = $req->user = self::withRole($account, $role) + ['token_id' => $acting['token_id'], 'viewed_by' => $acting['viewed_by']];
         }
         $account = Db::one('SELECT ' . self::USER_COLUMNS . ' FROM users u WHERE u.id = ?', [$acting['id']]);
         if (!in_array($role, self::availableRoles($account), true)) {
             throw new HttpException(422, 'Your account doesn\'t have that role');
         }
         Db::run('UPDATE api_tokens SET active_role = ? WHERE id = ?', [$role, $acting['token_id']]);
-        return $req->user = self::withRole($account, $role) + ['token_id' => $acting['token_id']];
+        return self::$current = $req->user = self::withRole($account, $role) + ['token_id' => $acting['token_id']];
     }
 
     public static function requireUser(Request $req): array
@@ -198,7 +232,7 @@ final class Auth
         if ($active === null && count($roles) === 1) {
             $active = $roles[0];
         }
-        return $req->user = self::withRole($row, $active);
+        return self::$current = $req->user = self::withRole($row, $active);
     }
 
     /** Changing your own password or name: not while the Super Admin is viewing as this account. */
@@ -289,10 +323,10 @@ final class Auth
         }
     }
 
-    /** The user's level in one PT module: none | view | add | manage. */
+    /** The user's level in one PT module: none | view | add | manage. Admins have PT only through their PT role. */
     public static function ptLevel(array $user, string $module): string
     {
-        if ($user['role'] !== 'user' || $user['pt_role'] === 'big_man') {
+        if ($user['role'] === 'super_admin' || $user['pt_role'] === 'big_man') {
             return 'manage';
         }
         if ($user['pt_module'] !== $module) {
@@ -336,6 +370,7 @@ final class Auth
         }
     }
 
+    /** Changes your password and signs you out everywhere, this device included. */
     public static function changePassword(int $userId, string $current, string $new): void
     {
         $user = Db::one('SELECT password_hash FROM users WHERE id = ?', [$userId]);
@@ -344,6 +379,28 @@ final class Auth
         }
         self::checkPassword($new);
         Db::run('UPDATE users SET password_hash = ? WHERE id = ?', [password_hash($new, PASSWORD_DEFAULT), $userId]);
+        Db::run('DELETE FROM api_tokens WHERE user_id = ?', [$userId]);
+    }
+
+    /** Where the user is signed in (one row per device sign-in), the current one marked. */
+    public static function devices(array $user): array
+    {
+        return array_map(fn ($t) => [
+            'id' => (int) $t['id'], 'device' => $t['device_name'], 'signed_in_at' => $t['created_at'],
+            'last_used_at' => $t['last_used_at'], 'expires_at' => $t['expires_at'], 'current' => (int) $t['id'] === (int) $user['token_id'],
+        ], Db::all(
+            'SELECT id, device_name, created_at, last_used_at, expires_at FROM api_tokens
+              WHERE user_id = ? AND expires_at > NOW() ORDER BY COALESCE(last_used_at, created_at) DESC',
+            [$user['id']],
+        ));
+    }
+
+    /** Signs one of your devices out ($tokenId), or every device except this one ($tokenId null). */
+    public static function signOutDevices(array $user, ?int $tokenId): int
+    {
+        return $tokenId === null
+            ? Db::run('DELETE FROM api_tokens WHERE user_id = ? AND id <> ?', [$user['id'], $user['token_id']])->rowCount()
+            : Db::run('DELETE FROM api_tokens WHERE user_id = ? AND id = ?', [$user['id'], $tokenId])->rowCount();
     }
 
     public static function checkPassword(string $password): void
@@ -382,7 +439,7 @@ final class Auth
                 'transcribe'   => self::hasGeneral($u) && !self::isFree($u),
                 'usage'        => $u['role'] === 'super_admin',
                 'manage_users' => in_array($u['role'], ['super_admin', 'admin'], true) || $account['role'] === 'super_admin',
-                'translations' => self::isFree($u) ? ['limit' => self::FREE_TRANSLATIONS_PER_DAY, 'used' => Quota::usedToday((int) $u['id'])] : null,
+                'allowance'    => self::hasGeneral($u) ? Allowance::summary($u) : null, // today's translation words and transcription minutes
                 'pt'           => $pt,
             ],
         ];

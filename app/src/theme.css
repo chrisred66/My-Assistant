@@ -507,6 +507,31 @@ details.card > summary {
   .sidebar::after {
     display: none;
   }
+  /* Narrow windows and phones: the pages as a scrollable row of tabs; the role switcher (and "viewing as") on a row of
+     its own below them. The theme switch and the account are in Settings. */
+  .sidebar {
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  .brand,
+  .sidebar-footer .theme-switch,
+  .sidebar-footer .sidebar-user-row {
+    display: none;
+  }
+  .sidebar-footer {
+    flex-basis: 100%;
+    padding: 0;
+    border: none;
+  }
+  .sidebar-footer:not(:has(.role-switcher, .viewing-as)) {
+    display: none;
+  }
+}
+
+/* Phones draw the app edge to edge: keep clear of the status bar and the gesture bar. */
+.mobile .shell {
+  padding-top: max(env(safe-area-inset-top, 0px), 28px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
 /* ---- Roles: picker after sign-in, switcher in the sidebar ---- */

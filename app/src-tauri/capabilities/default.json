@@ -40,6 +40,7 @@
         "core:window:allow-cursor-position",
         "core:window:allow-is-visible",
         "notification:default",
+        "dialog:allow-save",
         "core:window:allow-set-ignore-cursor-events"
     ]
 }

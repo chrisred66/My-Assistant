@@ -18,6 +18,7 @@ import SettingsPage from "./pages/Settings";
 import Usage from "./pages/Usage";
 import DailyFeed from "./pages/DailyFeed";
 import { watchDailyFeed } from "./lib/feedNotify";
+import { isDesktop } from "./lib/platform";
 import { listen } from "@tauri-apps/api/event";
 import { serveActivityRequests } from "./lib/activity";
 
@@ -83,7 +84,7 @@ export default function App() {
 
   // The desktop usage ball shows usage, which only the Super Admin can see: shown while they're signed in (in any role,
   // if switched on in Settings), hidden otherwise.
-  const ballOwner = session.state === "signedIn" && (session.user.account_role === "super_admin" || session.user.viewed_by !== null);
+  const ballOwner = isDesktop && session.state === "signedIn" && (session.user.account_role === "super_admin" || session.user.viewed_by !== null);
   useEffect(() => {
     if (ballOwner) void ballEnabled().then((on) => (on ? showBall() : hideBall()));
     else void hideBall();
@@ -222,7 +223,6 @@ export default function App() {
           <Language
             tab={languageTab}
             onTab={setLanguageTab}
-            freeLimit={session.user.access.translations?.limit ?? null}
             canTranscribe={session.user.access.transcribe}
           />
         )}
