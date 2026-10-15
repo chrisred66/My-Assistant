@@ -1,6 +1,8 @@
-# One-time setup of the Cloudflare Tunnel as a Windows service (https://<your-tunnel-domain>).
+# One-time setup of the Cloudflare Tunnel as a Windows service.
 # Run in an administrator PowerShell:
-#   powershell -ExecutionPolicy Bypass -File C:\xampp\htdocs\My-Assistant\server\bin\setup-tunnel-service.ps1
+#   powershell -ExecutionPolicy Bypass -File C:\xampp\htdocs\My-Assistant\server\bin\setup-tunnel-service.ps1 [-TunnelId <id>] [-Hostname <name>]
+# The tunnel's id and public hostname are read from the existing tunnel config (C:\ProgramData\cloudflared\config.yml,
+# or the one "cloudflared tunnel create" wrote in your user folder) unless given.
 #
 # 1. Restarts Apache, so the API-only site (conf\extra\httpd-my-assistant.conf) is loaded.
 # 2. Checks that site answers only with the API: if phpMyAdmin (or anything else) is reachable through it, it stops
@@ -9,11 +11,21 @@
 #    and runs the "Cloudflared" service with them. A locally configured tunnel needs "tunnel --config ... run" on the
 #    service's command line; "cloudflared service install" alone starts it without arguments, and it exits at once.
 
+param([string]$TunnelId = '', [string]$Hostname = '')
+
 $ErrorActionPreference = 'Stop'
 $cloudflared = 'C:\Program Files (x86)\cloudflared\cloudflared.exe'
-$tunnelId = '<tunnel-id>'
-$userDir = 'C:\Users\User\.cloudflared'
+$userDir = "$env:USERPROFILE\.cloudflared"
 $dir = 'C:\ProgramData\cloudflared'
+foreach ($cfg in "$dir\config.yml", "$userDir\config.yml") {
+    if (Test-Path $cfg) {
+        $text = Get-Content $cfg -Raw
+        if (-not $TunnelId -and $text -match '(?m)^tunnel:\s*(\S+)') { $TunnelId = $Matches[1] }
+        if (-not $Hostname -and $text -match '(?m)hostname:\s*(\S+)') { $Hostname = $Matches[1] }
+    }
+}
+if (-not $TunnelId -or -not $Hostname) { throw 'Give -TunnelId and -Hostname (no tunnel config found to read them from).' }
+$tunnelId = $TunnelId
 
 Write-Host '1/3 Restarting Apache...'
 Restart-Service Apache2.4
@@ -37,7 +49,7 @@ New-Item -ItemType Directory -Force $dir | Out-Null
 if (-not (Test-Path "$dir\$tunnelId.json")) { Copy-Item "$userDir\$tunnelId.json" $dir -Force }
 if (-not (Test-Path "$dir\config.yml")) {
     @("tunnel: $tunnelId", "credentials-file: C:/ProgramData/cloudflared/$tunnelId.json", 'ingress:',
-      '  - hostname: <your-tunnel-domain>', '    service: http://127.0.0.1:8090', '  - service: http_status:404') |
+      "  - hostname: $Hostname", '    service: http://127.0.0.1:8090', '  - service: http_status:404') |
         Set-Content "$dir\config.yml" -Encoding ascii
 }
 if (-not (Get-Service Cloudflared -ErrorAction SilentlyContinue)) { & $cloudflared service install }
@@ -45,4 +57,4 @@ Set-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Services\Cloudflared' ImagePath
 Restart-Service Cloudflared
 Start-Sleep -Seconds 8
 Get-Service Cloudflared | Select-Object Name, Status, StartType | Format-Table
-Write-Host 'Done. Check https://<your-tunnel-domain>/health in a browser.'
+Write-Host "Done. Check https://$Hostname/health in a browser."

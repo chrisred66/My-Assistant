@@ -11,6 +11,12 @@ Unreleased to the version and date, and bump the app version in
 
 ## [Unreleased]
 
+### Changed
+- **Phones and narrow windows**: navigation is a drawer that slides in from the right (☰ in a slim top bar showing
+  the page's name), closed by choosing a page or tapping the page behind it; it holds the role switcher, theme switch
+  and account as on the desktop. The page never scrolls sideways: wide tables and tab rows scroll in their own box
+  (table cells no longer wrap there, so columns keep their width).
+
 ## [0.4.0] - 2026-10-14
 
 Ready for other users: daily allowances, storage limits, an activity log, a public HTTPS address, DeepSeek
@@ -41,7 +47,7 @@ translation, and the Android app.
   API-only Apache site on `127.0.0.1:8090` that routes every request to the API, so XAMPP's `/phpmyadmin` and other
   server-wide aliases can't be reached through it (they trust "from this machine", which tunnel traffic is); the
   `Cloudflared` service set up by `bin/setup-tunnel-service.ps1`; HTTPS forced at Cloudflare. The app's default server
-  address is now the public one.
+  address is now the public one (set at build time in `app/.env.local`).
 - **Nightly backups** (`bin/backup.php`, Task Scheduler "My Assistant Backup", 02:30): both databases as compressed
   dumps (kept 14 days) and a mirror of the recordings, on the second drive (`D:\backups\my-assistant`).
 - **Sign-in lockout**: 5 failed attempts for a login (or 20 from one IP) in 15 minutes lock it for 15 minutes; a login

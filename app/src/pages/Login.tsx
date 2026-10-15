@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { api, configureApi, normalizeBaseUrl, type User } from "../lib/api";
 import { errorMessage } from "../lib/format";
-import { saveSettings, setToken, type Settings } from "../lib/settings";
+import { saveSettings, setToken, type Settings, DEFAULT_SERVER_URL, LOCAL_SERVER_URL } from "../lib/settings";
 
 interface Props {
   settings: Settings;
@@ -56,7 +56,7 @@ export default function Login({ settings, onSignedIn }: Props) {
           <span>Server address</span>
           <input value={serverUrl} onChange={(e) => setServerUrl(e.target.value)} required spellCheck={false} />
           <small className="muted">
-            Usually https://<your-tunnel-domain>. On the server PC itself: http://localhost/My-Assistant/server/public.
+            Usually {DEFAULT_SERVER_URL}. On the server PC itself: {LOCAL_SERVER_URL}.
           </small>
         </label>
         <div className="row">

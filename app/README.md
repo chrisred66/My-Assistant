@@ -24,8 +24,9 @@ npm install
 npm run tauri dev      # dev window with hot reload
 ```
 
-The server address defaults to `https://<your-tunnel-domain>`. On the server PC itself,
-`http://localhost/My-Assistant/server/public` is quicker.
+The default server address is set at build time in `app/.env.local` (git-ignored), e.g.
+`VITE_DEFAULT_SERVER_URL=https://<your-tunnel-domain>`; without it, the app defaults to the local address
+`http://localhost/My-Assistant/server/public`, which is also the quicker choice on the server PC itself.
 
 ## Build a release
 

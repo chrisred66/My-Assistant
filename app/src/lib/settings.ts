@@ -2,8 +2,14 @@
 import { invoke } from "@tauri-apps/api/core";
 import { load, type Store } from "@tauri-apps/plugin-store";
 
-/** The public address (Cloudflare Tunnel to the always-on desktop). On that desktop itself, the local address is quicker. */
-export const DEFAULT_SERVER_URL = "https://<your-tunnel-domain>";
+/** The local address on the server PC itself (quicker there than going out through the tunnel). */
+export const LOCAL_SERVER_URL = "http://localhost/My-Assistant/server/public";
+
+/**
+ * The default server address: the public one (Cloudflare Tunnel to the always-on desktop), set at build time in
+ * app/.env.local as VITE_DEFAULT_SERVER_URL (not committed), else the local address.
+ */
+export const DEFAULT_SERVER_URL: string = import.meta.env.VITE_DEFAULT_SERVER_URL || LOCAL_SERVER_URL;
 
 export interface Settings {
   serverUrl: string;

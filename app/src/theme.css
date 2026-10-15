@@ -507,31 +507,115 @@ details.card > summary {
   .sidebar::after {
     display: none;
   }
-  /* Narrow windows and phones: the pages as a scrollable row of tabs; the role switcher (and "viewing as") on a row of
-     its own below them. The theme switch and the account are in Settings. */
-  .sidebar {
-    flex-wrap: wrap;
+  /* Narrow windows and phones: a slim top bar (page name, menu button on the right); the navigation is a drawer that
+     slides in from the right, closed by choosing a page or tapping the page behind it. */
+  .shell {
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+  .mobile-bar {
+    display: flex;
     align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 8px 12px 8px 16px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
   }
-  .brand,
-  .sidebar-footer .theme-switch,
-  .sidebar-footer .sidebar-user-row {
-    display: none;
+  /* ".shell .sidebar": more specific than the theme's later ".sidebar { z-index: 5 }" and glass background. */
+  .shell .sidebar {
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 60;
+    background: var(--surface);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    width: min(82vw, 300px);
+    flex-direction: column;
+    flex-wrap: nowrap;
+    overflow-x: hidden;
+    overflow-y: auto;
+    padding: 16px 10px;
+    border-bottom: none;
+    border-left: 1px solid var(--border);
+    transform: translateX(105%);
+    transition: transform 0.2s ease;
+    visibility: hidden;
   }
-  .sidebar-footer {
-    flex-basis: 100%;
-    padding: 0;
-    border: none;
+  .shell .sidebar.open {
+    transform: none;
+    visibility: visible;
+    box-shadow: -12px 0 32px rgba(0, 0, 0, 0.25);
   }
-  .sidebar-footer:not(:has(.role-switcher, .viewing-as)) {
-    display: none;
+  .nav-scrim {
+    position: fixed;
+    inset: 0;
+    z-index: 55;
+    background: rgba(0, 0, 0, 0.35);
   }
+
+  /* The page never scrolls sideways: anything wider than the screen scrolls on its own. */
+  .content {
+    overflow-x: hidden;
+    min-width: 0;
+  }
+  .page,
+  .card,
+  .sticky-head {
+    min-width: 0;
+    max-width: 100%;
+  }
+  .data-table {
+    display: block;
+    max-width: 100%;
+    overflow-x: auto;
+  }
+  /* Cells keep their width, so a wide table scrolls sideways in its own box instead of squeezing its columns. */
+  .data-table th,
+  .data-table td {
+    white-space: nowrap;
+  }
+  .segmented,
+  .feed-tabs,
+  pre,
+  .code-block {
+    max-width: 100%;
+    overflow-x: auto;
+  }
+}
+
+.mobile-bar,
+.nav-scrim {
+  display: none;
+}
+@media (max-width: 760px) {
+  .mobile-bar {
+    display: flex;
+  }
+  .nav-scrim {
+    display: block;
+  }
+}
+.mobile-bar-title {
+  font-family: var(--font-display, inherit);
+  font-weight: 700;
+  font-size: 1.05rem;
+}
+.menu-btn {
+  font-size: 1.3rem;
+  line-height: 1;
+  padding: 6px 12px;
 }
 
 /* Phones draw the app edge to edge: keep clear of the status bar and the gesture bar. */
 .mobile .shell {
   padding-top: max(env(safe-area-inset-top, 0px), 28px);
   padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+.mobile .shell .sidebar {
+  padding-top: calc(max(env(safe-area-inset-top, 0px), 28px) + 12px);
+  padding-bottom: calc(max(env(safe-area-inset-bottom, 0px), 24px) + 12px);
 }
 
 /* ---- Roles: picker after sign-in, switcher in the sidebar ---- */

@@ -49,6 +49,8 @@ export default function App() {
   const [session, setSession] = useState<Session>({ state: "loading" });
   const [page, setPage] = useState<Page>("pt");
   const [languageTab, setLanguageTab] = useState<LanguageTab>("recordings");
+  // Narrow screens (phones): the navigation is a drawer from the right, opened from the top bar.
+  const [navOpen, setNavOpen] = useState(false);
 
   const signOutLocally = useCallback(async () => {
     await clearToken();
@@ -182,14 +184,25 @@ export default function App() {
 
   return (
     <div className="shell">
-      <nav className="sidebar" aria-label="Main">
+      {/* Narrow screens only (CSS): the page's name and the menu button; the menu slides in from the right. */}
+      <header className="mobile-bar">
+        <span className="mobile-bar-title">{NAV.find((n) => n.id === page)?.label ?? APP_NAME}</span>
+        <button className="menu-btn" aria-label="Menu" aria-expanded={navOpen} aria-controls="main-nav" onClick={() => setNavOpen((o) => !o)}>
+          ☰
+        </button>
+      </header>
+      {navOpen && <div className="nav-scrim" onClick={() => setNavOpen(false)} aria-hidden />}
+      <nav id="main-nav" className={`sidebar${navOpen ? " open" : ""}`} aria-label="Main">
         <div className="brand">{APP_NAME}</div>
         {NAV.filter((item) => item.visible(session.user)).map((item) => (
           <button
             key={item.id}
             className={`nav-item${page === item.id ? " active" : ""}`}
             aria-current={page === item.id ? "page" : undefined}
-            onClick={() => setPage(item.id)}
+            onClick={() => {
+              setPage(item.id);
+              setNavOpen(false);
+            }}
           >
             {item.label}
           </button>

@@ -14,7 +14,7 @@ A personal toolkit. The desktop app is called **My Assistant**.
 
 ```
 Apps ──HTTPS──► Cloudflare ──(tunnel, no open ports)──► always-on desktop
-                https://<your-tunnel-domain>     ├─ Apache site 127.0.0.1:8090: server/public only
+                https://<your-tunnel-domain>             ├─ Apache site 127.0.0.1:8090: server/public only
 You (admin) ──(Tailscale)────────────────────────────────►├─ server/  PHP API (Apache, XAMPP)
                                      │    └─ AI relay: holds the API keys, logs every call's tokens
                                      ├─ MariaDB (localhost only): chrismanager + gba_database (PT data)
@@ -307,6 +307,11 @@ terms apply there. This project's own code doesn't change those terms.
 The app shows the pet credits and links in Settings → Desktop pet and in the pet's right-click menu. If you publish
 this project or a build of it, keep this section and don't bundle the third-party clips or images without following
 their terms.
+
+## Licence
+
+No licence is granted yet: you may read this code, but not copy, modify or redistribute it. The third-party pet
+assets above have their own terms and aren't in this repository.
 
 ## Rules
 
