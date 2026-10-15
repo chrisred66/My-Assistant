@@ -11,6 +11,10 @@ Unreleased to the version and date, and bump the app version in
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-10-15
+
+Phone layout fixes, and the repository is public.
+
 ### Changed
 - **Phones and narrow windows**: navigation is a drawer that slides in from the right (☰ in a slim top bar showing
   the page's name), closed by choosing a page or tapping the page behind it; it holds the role switcher, theme switch
