@@ -41,6 +41,8 @@
         "core:window:allow-is-visible",
         "notification:default",
         "dialog:allow-save",
-        "core:window:allow-set-ignore-cursor-events"
+        "core:window:allow-set-ignore-cursor-events",
+        "process:allow-restart",
+        "core:window:allow-set-title"
     ]
 }

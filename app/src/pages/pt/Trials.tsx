@@ -3,8 +3,9 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { ErrorText } from "../../components/common";
 import { api, canPt, type PtManufacturer, type PtTrial, type PtTrialBus, type PtTrialStatus, type User } from "../../lib/api";
-import { errorMessage, formatInteger } from "../../lib/format";
+import { errorMessage, formatDay, formatInteger } from "../../lib/format";
 import Operations from "./Operations";
+import { t } from "../../lib/i18n";
 
 const STATUS_LABELS: Record<PtTrialStatus, string> = { planned: "Planned", in_progress: "In progress", completed: "Completed" };
 
@@ -49,9 +50,9 @@ export default function Trials({ user }: { user: User }) {
   }
 
   function promote(b: PtTrialBus) {
-    const n = window.prompt(`Add trial bus ${b.bus_id} (${b.model ?? "model?"}) to the fleet as bus number… (the number used in trip logs)`);
+    const n = window.prompt(t("Add trial bus {bus_id} ({v}) to the fleet as bus number… (the number used in trip logs)", { bus_id: b.bus_id, v: b.model ?? "model?" }));
     if (!n) return;
-    const plate = window.prompt("Plate (optional)", "") ?? "";
+    const plate = window.prompt(t("Plate (optional)"), "") ?? "";
     void act(() => api.ptPromoteTrialBus(b.trial_bus_id, Number(n), plate.trim() || undefined));
   }
 
@@ -63,71 +64,69 @@ export default function Trials({ user }: { user: User }) {
 
       <div className="card stack">
         <div className="row space-between wrap">
-          <h2>Trials</h2>
+          <h2>{t("Trials")}</h2>
           {canAdd && (
             <button className="small-btn" onClick={() => setAdding(adding === "trial" ? null : "trial")} aria-expanded={adding === "trial"}>
-              {adding === "trial" ? "Cancel" : "New trial…"}
+              {adding === "trial" ? t("Cancel") : t("New trial…")}
             </button>
           )}
         </div>
         {adding === "trial" && <AddTrial buses={activeBuses} onAdded={changed} onAddBus={() => setAdding("bus")} />}
-        {trials === null && !error && <p className="muted">Loading…</p>}
-        {trials?.length === 0 && <p className="muted">No trials yet. Add a trial bus, then create a trial for it.</p>}
+        {trials === null && !error && <p className="muted">{t("Loading…")}</p>}
+        {trials?.length === 0 && <p className="muted">{t("No trials yet. Add a trial bus, then create a trial for it.")}</p>}
         {trials && trials.length > 0 && (
           <div className="table-scroll">
             <table className="data-table">
               <thead>
                 <tr>
-                  <th>Trial</th>
-                  <th>Bus</th>
-                  <th>Route</th>
-                  <th>Period</th>
-                  <th className="num">Trips</th>
-                  <th className="num">Distance</th>
-                  <th>Status</th>
+                  <th>{t("Trial")}</th>
+                  <th>{t("Bus")}</th>
+                  <th>{t("Route")}</th>
+                  <th>{t("Period")}</th>
+                  <th className="num">{t("Trips")}</th>
+                  <th className="num">{t("Distance")}</th>
+                  <th>{t("Status")}</th>
                 </tr>
               </thead>
               <tbody>
-                {trials.map((t) => (
-                  <tr key={t.trial_id}>
+                {trials.map((trial) => (
+                  <tr key={trial.trial_id}>
                     <td>
-                      <strong>{t.trial_name}</strong>
-                      {(t.load_condition || t.notes) && <div className="muted small">{[t.load_condition, t.notes].filter(Boolean).join(" · ")}</div>}
+                      <strong>{trial.trial_name}</strong>
+                      {(trial.load_condition || trial.notes) && <div className="muted small">{[trial.load_condition, trial.notes].filter(Boolean).join(" · ")}</div>}
                     </td>
                     <td>
-                      {t.bus_label ?? <span className="muted">—</span>}
-                      {t.model && (
+                      {trial.bus_label ?? <span className="muted">—</span>}
+                      {trial.model && (
                         <div className="muted small">
-                          {t.manufacturer} {t.model}
+                          {trial.manufacturer} {trial.model}
                         </div>
                       )}
                     </td>
-                    <td>{t.route ?? <span className="muted">—</span>}</td>
+                    <td>{trial.route ?? <span className="muted">—</span>}</td>
                     <td className="nowrap">
-                      {t.start_date ?? "?"} → {t.end_date ?? "open"}
-                      {t.first_trip && (
-                        <div className="muted small">
-                          trips {t.first_trip} to {t.last_trip}
-                        </div>
+                      {trial.start_date ? formatDay(trial.start_date) : "?"} → {trial.end_date ? formatDay(trial.end_date) : t("open")}
+                      {trial.first_trip && (
+                        <div className="muted small">{t("trips {first_trip} to {last_trip}", { first_trip: formatDay(trial.first_trip), last_trip: formatDay(trial.last_trip) })}</div>
                       )}
                     </td>
-                    <td className="num">{formatInteger(t.trips)}</td>
-                    <td className="num">{formatInteger(Math.round(t.distance))} km</td>
+                    <td className="num">{formatInteger(trial.trips)}</td>
+                    <td className="num">{t("{integer} km", { integer: formatInteger(Math.round(trial.distance)) })}</td>
                     <td>
                       {canEdit ? (
                         <select
-                          value={t.status}
-                          onChange={(e) => void act(() => api.ptUpdateTrial(t.trial_id, { status: e.target.value as PtTrialStatus }))}
-                          aria-label={`Status of ${t.trial_name}`}
+                          value={trial.status}
+                          onChange={(e) => void act(() => api.ptUpdateTrial(trial.trial_id, { status: e.target.value as PtTrialStatus }))}
+                          aria-label={t("Status of {trial_name}", { trial_name: trial.trial_name })}
                         >
                           {(Object.keys(STATUS_LABELS) as PtTrialStatus[]).map((s) => (
                             <option key={s} value={s}>
-                              {STATUS_LABELS[s]}
+                              {t(STATUS_LABELS[s])}
                             </option>
                           ))}
                         </select>
                       ) : (
-                        STATUS_LABELS[t.status]
+                        t(STATUS_LABELS[trial.status])
                       )}
                     </td>
                   </tr>
@@ -139,12 +138,12 @@ export default function Trials({ user }: { user: User }) {
       </div>
 
       <details className="card" open={adding === "bus" || (buses !== null && buses.length === 0)}>
-        <summary>Trial buses ({buses?.length ?? "…"})</summary>
+        <summary>{t("Trial buses ({v})", { v: buses?.length ?? "…" })}</summary>
         <div className="stack pt-tables">
           {canAdd && (
             <div>
               <button className="small-btn" onClick={() => setAdding(adding === "bus" ? null : "bus")} aria-expanded={adding === "bus"}>
-                {adding === "bus" ? "Cancel" : "Add trial bus…"}
+                {adding === "bus" ? t("Cancel") : t("Add trial bus…")}
               </button>
             </div>
           )}
@@ -153,12 +152,12 @@ export default function Trials({ user }: { user: User }) {
             <table className="data-table">
               <thead>
                 <tr>
-                  <th>Bus</th>
-                  <th>Model</th>
-                  <th>Energy</th>
-                  <th className="num">Trials</th>
-                  <th className="num">Trips</th>
-                  <th>Status</th>
+                  <th>{t("Bus")}</th>
+                  <th>{t("Model")}</th>
+                  <th>{t("Energy")}</th>
+                  <th className="num">{t("Trials")}</th>
+                  <th className="num">{t("Trips")}</th>
+                  <th>{t("Status")}</th>
                   {canEdit && <th />}
                 </tr>
               </thead>
@@ -180,12 +179,12 @@ export default function Trials({ user }: { user: User }) {
                     <td>{b.energy_source ?? "—"}</td>
                     <td className="num">{b.trials}</td>
                     <td className="num">{formatInteger(b.trips)}</td>
-                    <td>{b.status === "promoted" ? `In the fleet as bus ${b.promoted_to_bus_id}` : b.status === "active" ? "On trial" : "Finished"}</td>
+                    <td>{b.status === "promoted" ? t("In the fleet as bus {promoted_to_bus_id}", { promoted_to_bus_id: b.promoted_to_bus_id }) : b.status === "active" ? t("On trial") : t("Finished")}</td>
                     {canEdit && (
                       <td className="num">
                         {b.status !== "promoted" && (
-                          <button className="small-btn" onClick={() => promote(b)} title="Add this bus to the fleet">
-                            Add to fleet…
+                          <button className="small-btn" onClick={() => promote(b)} title={t("Add this bus to the fleet")}>
+                            {t("Add to fleet…")}
                           </button>
                         )}
                       </td>
@@ -217,9 +216,9 @@ function AddTrial({ buses, onAdded, onAddBus }: { buses: PtTrialBus[]; onAdded: 
   if (buses.length === 0) {
     return (
       <p className="small">
-        A trial needs a trial bus.{" "}
+        {t("A trial needs a trial bus.")}{" "}
         <button className="link-btn" onClick={onAddBus}>
-          <u>Add a trial bus first</u>
+          <u>{t("Add a trial bus first")}</u>
         </button>
         .
       </p>
@@ -252,11 +251,11 @@ function AddTrial({ buses, onAdded, onAddBus }: { buses: PtTrialBus[]; onAdded: 
     <form className="stack" onSubmit={(e) => void submit(e)}>
       <div className="row wrap">
         <label className="field inline grow">
-          <span>Name</span>
-          <input value={name} onChange={(e) => setName(e.target.value)} required placeholder="e.g. Yutong U12 on route 65, summer" />
+          <span>{t("Name")}</span>
+          <input value={name} onChange={(e) => setName(e.target.value)} required placeholder={t("e.g. Yutong U12 on route 65, summer")} />
         </label>
         <label className="field inline">
-          <span>Trial bus</span>
+          <span>{t("Trial bus")}</span>
           <select value={bus} onChange={(e) => setBus(e.target.value)}>
             {buses.map((b) => (
               <option key={b.trial_bus_id} value={b.trial_bus_id}>
@@ -266,29 +265,29 @@ function AddTrial({ buses, onAdded, onAddBus }: { buses: PtTrialBus[]; onAdded: 
           </select>
         </label>
         <label className="field inline">
-          <span>Route</span>
+          <span>{t("Route")}</span>
           <input value={route} onChange={(e) => setRoute(e.target.value)} />
         </label>
       </div>
       <div className="row wrap">
         <label className="field inline">
-          <span>Start</span>
+          <span>{t("Start")}</span>
           <input type="date" value={start} onChange={(e) => setStart(e.target.value)} required />
         </label>
         <label className="field inline">
-          <span>End (optional)</span>
+          <span>{t("End (optional)")}</span>
           <input type="date" value={end} min={start} onChange={(e) => setEnd(e.target.value)} />
         </label>
         <label className="field inline">
-          <span>Load condition</span>
-          <input value={load} onChange={(e) => setLoad(e.target.value)} placeholder="e.g. full, ballast 4 t" />
+          <span>{t("Load condition")}</span>
+          <input value={load} onChange={(e) => setLoad(e.target.value)} placeholder={t("e.g. full, ballast 4 t")} />
         </label>
         <label className="field inline grow">
-          <span>Notes</span>
+          <span>{t("Notes")}</span>
           <input value={notes} onChange={(e) => setNotes(e.target.value)} />
         </label>
         <button className="primary align-end" type="submit" disabled={busy}>
-          {busy ? "Creating…" : "Create trial"}
+          {busy ? t("Creating…") : t("Create trial")}
         </button>
       </div>
       <ErrorText message={error} />
@@ -332,11 +331,11 @@ function AddTrialBus({ onAdded }: { onAdded: () => void }) {
     <form className="stack" onSubmit={(e) => void submit(e)}>
       <div className="row wrap">
         <label className="field inline">
-          <span>Label (plate or vendor number)</span>
+          <span>{t("Label (plate or vendor number)")}</span>
           <input value={label} onChange={(e) => setLabel(e.target.value)} required maxLength={50} />
         </label>
         <label className="field inline grow">
-          <span>Model</span>
+          <span>{t("Model")}</span>
           <select value={model} onChange={(e) => setModel(e.target.value)} required>
             {makers?.map((m) =>
               m.models.length ? (
@@ -352,14 +351,14 @@ function AddTrialBus({ onAdded }: { onAdded: () => void }) {
           </select>
         </label>
         <label className="field inline grow">
-          <span>Notes</span>
+          <span>{t("Notes")}</span>
           <input value={notes} onChange={(e) => setNotes(e.target.value)} />
         </label>
         <button className="primary align-end" type="submit" disabled={busy || !model}>
-          {busy ? "Adding…" : "Add trial bus"}
+          {busy ? t("Adding…") : t("Add trial bus")}
         </button>
       </div>
-      <p className="muted small">A new model? Add it under Fleet → manufacturer → Add model first.</p>
+      <p className="muted small">{t("A new model? Add it under Fleet → manufacturer → Add model first.")}</p>
       <ErrorText message={error} />
     </form>
   );

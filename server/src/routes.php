@@ -68,10 +68,20 @@ $router->post('/auth/devices/sign-out-others', function (Request $r) {
     return Auth::devices($user);
 });
 
-// Body: {display_name}. Any signed-in user, for their own account; empty clears it (the login is shown instead).
+// Body: any of {display_name, language}. Any signed-in user, for their own account; an empty display_name clears it
+// (the login is shown instead); language is en | zh (the app's language, following the person to every device).
 $router->post('/auth/profile', function (Request $r) {
     $user = Auth::requireOwnSession(Auth::requireUser($r));
-    Db::run('UPDATE users SET display_name = ? WHERE id = ?', [mb_substr(trim((string) $r->input('display_name', '')), 0, 100), $user['id']]);
+    if ($r->input('display_name') !== null) {
+        Db::run('UPDATE users SET display_name = ? WHERE id = ?', [mb_substr(trim((string) $r->input('display_name', '')), 0, 100), $user['id']]);
+    }
+    if ($r->input('language') !== null) {
+        $language = (string) $r->input('language');
+        if (!in_array($language, ['en', 'zh'], true)) {
+            throw new HttpException(422, 'language must be en or zh');
+        }
+        Db::run('UPDATE users SET language = ? WHERE id = ?', [$language, $user['id']]);
+    }
     return Auth::publicUser(Auth::requireUser($r));
 });
 
@@ -216,16 +226,22 @@ $chosenModel = function (Request $r): ?string {
     return $super ? ((string) $r->input('model', '') ?: null) : null;
 };
 
-// Body: {text, model? (Super Admin only)}. Arabic -> English; counts against the daily word allowance (Allowance).
-$router->post('/ai/translate', function (Request $r) use ($chosenModel) {
+/** The language to translate into: "target" if given and offered, else the account's language. */
+$target = fn (Request $r): string => Language::target($r->input('target'), $r->user);
+
+// Body: {text, target? (en, zh, ar, ...; default the account's language), model? (Super Admin only)}. Any language ->
+// the target; counts against the daily word allowance (Allowance).
+$router->post('/ai/translate', function (Request $r) use ($chosenModel, $target) {
     Auth::requireGeneral($r);
     $text   = (string) $r->input('text', '');
-    $result = Translator::translate($r->userId(), $text, $chosenModel($r));
+    $to     = $target($r);
+    $result = Translator::translate($r->userId(), $text, $to, $chosenModel($r));
 
     $id = Db::insert('transcripts', [
         'user_id'            => $r->userId(),
         'source_text'        => $text,
         'translated_text'    => $result->text,
+        'target_lang'        => $to,
         'translate_provider' => Routing::translator()->name(),
         'translate_model'    => $result->model,
     ]);
@@ -233,6 +249,7 @@ $router->post('/ai/translate', function (Request $r) use ($chosenModel) {
     return [
         'id'          => $id,
         'translation' => $result->text,
+        'target_lang' => $to,
         'model'       => $result->model,
         'usage'       => ['input_tokens' => $result->inputTokens, 'output_tokens' => $result->outputTokens],
     ];
@@ -288,20 +305,24 @@ $storeAudio = function (Request $r, array $audio) use ($recordingFile): string {
 /** Sets a live transcript's text from its segments, in order. English is the translation, or the original where a segment was English. */
 $rebuildTranscript = fn (int $transcriptId): array => Meeting::rebuild($transcriptId);
 
-/** Translates a transcript to English (skipped when it is English) and stores the result. */
-$translateTranscript = function (Request $r, int $transcriptId, string $text, ?string $language) use ($chosenModel): array {
+/**
+ * Translates a transcript into the target language (skipped when it's already in it) and stores the result. In the
+ * responses "english" is the translation, in target_lang (the name is from when it was always English).
+ */
+$translateTranscript = function (Request $r, int $transcriptId, string $text, ?string $language) use ($chosenModel, $target): array {
+    $to = $target($r);
     $lined = Language::sentenceLines($text);
     if ($lined !== trim($text) && Db::one('SELECT 1 FROM transcript_segments WHERE transcript_id = ? LIMIT 1', [$transcriptId]) === null) {
         Db::run('UPDATE transcripts SET source_text = ? WHERE id = ?', [$lined, $transcriptId]);
         $text = $lined;
     }
-    $t = Translator::toEnglish($r->userId(), $text, $language, $chosenModel($r));
+    $t = Translator::toTarget($r->userId(), $text, $to, $language, $chosenModel($r));
     Db::run(
-        'UPDATE transcripts SET translated_text = ?, translate_provider = ?, translate_model = ?,
+        'UPDATE transcripts SET translated_text = ?, target_lang = ?, translate_provider = ?, translate_model = ?,
                 source_lang = COALESCE(?, source_lang) WHERE id = ?',
-        [$t['english'], $t['provider'], $t['model'], $t['language'], $transcriptId],
+        [$t['translation'], $to, $t['provider'], $t['model'], $t['language'], $transcriptId],
     );
-    return ['transcript_id' => $transcriptId, 'language' => $t['language'], 'english' => $t['english']];
+    return ['transcript_id' => $transcriptId, 'language' => $t['language'], 'english' => $t['translation'], 'target_lang' => $to];
 };
 
 // Whole-file speech-to-text. One transcript per recording: re-transcribing replaces the text
@@ -347,7 +368,8 @@ $transcribeRecording = function (Request $r, array $rec) use ($recordingFile): a
 };
 
 // Upload a finished audio file. Field "audio" (+ optional "title", "recorded_at", "transcribe"=1).
-// "transcribe" also translates to English when the speech isn't English ("translate"=1 is accepted as an alias).
+// "transcribe" also translates it into "target" (default the account's language) when the speech is in another
+// language ("translate"=1 is accepted as an alias).
 // Once the file is saved the upload succeeds; a failed step comes back as "transcribe_error" /
 // "translate_error" so it can be retried on its own.
 $router->post('/recordings', function (Request $r) use ($uploadedAudio, $storeAudio, $ownRecording, $transcribeRecording, $translateTranscript, $recordingFile) {
@@ -381,8 +403,9 @@ $router->post('/recordings', function (Request $r) use ($uploadedAudio, $storeAu
     }
     try {
         $t = $translateTranscript($r, $response['transcript_id'], $response['text'], $response['language']);
-        $response['language'] = $t['language'];
-        $response['english']  = $t['english'];
+        $response['language']    = $t['language'];
+        $response['english']     = $t['english'];
+        $response['target_lang'] = $t['target_lang'];
     } catch (HttpException $e) {
         $response['translate_error'] = $e->getMessage();
     }
@@ -443,7 +466,8 @@ $router->get('/recordings', function (Request $r) {
     return Db::all(
         'SELECT r.id, r.kind, r.title, r.original_name, r.mime_type, r.size_bytes, r.duration_sec, r.recorded_at, r.created_at,
                 r.file_path <> \'\' AS has_audio, r.audio_removed_at,
-                t.id AS transcript_id, t.source_lang AS language, t.source_text, t.translated_text
+                t.id AS transcript_id, t.source_lang AS language, t.source_text, t.translated_text,
+                COALESCE(t.target_lang, \'en\') AS target_lang
            FROM recordings r
            LEFT JOIN transcripts t ON t.id = (SELECT MAX(t2.id) FROM transcripts t2 WHERE t2.recording_id = r.id)
           WHERE r.user_id = ? ORDER BY r.created_at DESC LIMIT 200',
@@ -454,7 +478,8 @@ $router->get('/recordings', function (Request $r) {
 $router->get('/transcripts', function (Request $r) {
     Auth::requireGeneral($r);
     return Db::all(
-        "SELECT id, recording_id, source_lang AS language, source_text, translated_text, translate_provider, translate_model, created_at
+        "SELECT id, recording_id, source_lang AS language, source_text, translated_text, COALESCE(target_lang, 'en') AS target_lang,
+                translate_provider, translate_model, created_at
            FROM transcripts WHERE user_id = ? AND source_text <> '' ORDER BY created_at DESC LIMIT 200",
         [$r->userId()],
     );
@@ -530,8 +555,9 @@ $router->delete('/transcripts/{id}', function (Request $r) {
     return ['ok' => true];
 });
 
-// Translate a saved transcript to English (skipped if it is English). Body: {model?}.
-$router->post('/transcripts/{id}/translate', function (Request $r) use ($translateTranscript) {
+// Translate a saved transcript into "target" (default the account's language; skipped if it's already in it).
+// Body: {target?, model?}.
+$router->post('/transcripts/{id}/translate', function (Request $r) use ($translateTranscript, $target) {
     Auth::requireGeneral($r);
     $t = Db::one(
         'SELECT t.id, t.source_text, t.source_lang, r.kind FROM transcripts t LEFT JOIN recordings r ON r.id = t.recording_id
@@ -543,17 +569,18 @@ $router->post('/transcripts/{id}/translate', function (Request $r) use ($transla
     }
     if ($t['kind'] === 'meeting' && Db::one('SELECT 1 FROM transcript_segments WHERE transcript_id = ? LIMIT 1', [$t['id']]) !== null) {
         set_time_limit(600);
-        $out = Meeting::translate($r->userId(), (int) $t['id'], null);
+        $to  = $target($r);
+        $out = Meeting::translate($r->userId(), (int) $t['id'], null, $to, true);
         $now = Db::one('SELECT translated_text FROM transcripts WHERE id = ?', [$t['id']]);
-        return ['transcript_id' => (int) $t['id'], 'language' => $out['language'], 'english' => $now['translated_text']];
+        return ['transcript_id' => (int) $t['id'], 'language' => $out['language'], 'english' => $now['translated_text'], 'target_lang' => $to];
     }
     return $translateTranscript($r, (int) $t['id'], $t['source_text'], $t['source_lang']);
 });
 
 // --- Live recording ---------------------------------------------------------
 // The app records continuously and sends short, self-contained chunks (cut at pauses) while it records.
-// Each chunk is transcribed (language auto-detected) and, if not English, translated; the text comes
-// straight back. On stop, the app uploads the whole recording to /finish.
+// Each chunk is transcribed (language auto-detected) and translated into "target" (default the account's language)
+// unless it's already in it; the text comes straight back. On stop, the app uploads the whole recording to /finish.
 
 // Body: {title?, recorded_at?}. Returns the ids the chunks and /finish refer to.
 $router->post('/live', function (Request $r) {
@@ -581,8 +608,8 @@ $liveTranscriptId = function (Request $r, array $rec): int {
     return (int) $t['id'];
 };
 
-// Multipart: "audio" (one chunk), "seq" (0, 1, 2, ...), optional "start_ms", "prompt" (preceding text).
-$router->post('/live/{id}/chunk', function (Request $r) use ($ownRecording, $liveTranscriptId, $uploadedAudio, $rebuildTranscript) {
+// Multipart: "audio" (one chunk), "seq" (0, 1, 2, ...), optional "start_ms", "prompt" (preceding text), "target".
+$router->post('/live/{id}/chunk', function (Request $r) use ($ownRecording, $liveTranscriptId, $uploadedAudio, $rebuildTranscript, $target) {
     Auth::requireTranscription(Auth::requireGeneral($r));
     $rec          = $ownRecording($r, (int) $r->params['id']);
     $transcriptId = $liveTranscriptId($r, $rec);
@@ -601,9 +628,11 @@ $router->post('/live/{id}/chunk', function (Request $r) use ($ownRecording, $liv
     try {
         // Low effort keeps each chunk's translation quick enough to feel live. Over the word allowance, the text still
         // comes back, untranslated, with translate_error saying why.
-        $t        = Translator::toEnglish($r->userId(), $heard['text'], $language, null, 'low', 'live_translate');
+        $to       = $target($r);
+        $t        = Translator::toTarget($r->userId(), $heard['text'], $to, $language, null, 'low', 'live_translate');
         $language = $t['language'];
-        $english  = $t['english'];
+        $english  = $t['translation'];
+        Db::run('UPDATE transcripts SET target_lang = ? WHERE id = ?', [$to, $transcriptId]);
         if ($t['model'] !== null) {
             Db::run('UPDATE transcripts SET translate_provider = ?, translate_model = ? WHERE id = ?',
                 [$t['provider'], $t['model'], $transcriptId]);
@@ -695,12 +724,13 @@ $router->post('/meetings/{id}/chunk', function (Request $r) use ($ownMeeting, $m
     return ['seq' => $seq, 'turns' => $turns, 'speakers' => Meeting::speakers((int) $rec['id'])];
 });
 
-// Body: {seq?}. English for one chunk's turns (or all untranslated ones).
-$router->post('/meetings/{id}/translate', function (Request $r) use ($ownMeeting, $meetingTranscriptId) {
+// Body: {seq?, target?}. The translation of one chunk's turns (or all untranslated ones), into "target" (default the
+// account's language).
+$router->post('/meetings/{id}/translate', function (Request $r) use ($ownMeeting, $meetingTranscriptId, $target) {
     Auth::requireTranscription(Auth::requireGeneral($r));
     $rec = $ownMeeting($r);
     $seq = $r->input('seq');
-    return Meeting::translate($r->userId(), $meetingTranscriptId($rec), $seq === null ? null : (int) $seq);
+    return Meeting::translate($r->userId(), $meetingTranscriptId($rec), $seq === null ? null : (int) $seq, $target($r));
 });
 
 $router->get('/meetings/{id}/speakers', function (Request $r) use ($ownMeeting) {
@@ -764,6 +794,7 @@ $router->get('/feed', function (Request $r) {
         'feeds'       => Feed::forDate($r->userId(), $date),
         'dates'       => $free ? [] : Feed::dates($r->userId()),
         'topics'      => Feed::topics($r->userId()),
+        'topic_names' => Feed::topicNames($r->userId()),
     ];
 });
 

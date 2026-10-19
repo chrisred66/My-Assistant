@@ -77,6 +77,7 @@ async fn claude_code_usage(days: Option<u64>) -> Result<Vec<claude_code::Entry>,
 }
 
 mod fullscreen;
+mod ui_language;
 mod signals;
 
 /// The git repositories whose commits and reverts the desktop pet reacts to.
@@ -160,8 +161,24 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_process::init())
         .manage(system_audio::SystemAudio::default())
         .setup(|app| {
+            // The windows are created here rather than by Tauri ("create": false in tauri.conf.json), so the WebView's
+            // own language (--lang) can follow the account's language saved by the frontend.
+            let locale = ui_language::browser_locale(app.handle());
+            for mut cfg in app.config().app.windows.clone() {
+                if cfg.create {
+                    continue;
+                }
+                if let Some(args) = cfg.additional_browser_args.as_mut() {
+                    *args = args.replace("--lang=en-GB", &format!("--lang={locale}"));
+                }
+                tauri::WebviewWindowBuilder::from_config(app.handle(), &cfg)?.build()?;
+            }
+            // Updates (desktop only): signed releases from GitHub, see "plugins.updater" in tauri.conf.json.
+            #[cfg(desktop)]
+            app.handle().plugin(tauri_plugin_updater::Builder::new().build())?;
             let repos = signals::GitRepos::default();
             // The ball and pet's watchers (full screen, keyboard / mouse activity, git) only matter on the desktop; on a
             // phone they'd just poll for nothing.
@@ -188,7 +205,8 @@ pub fn run() {
             pet_skin_set_credit,
             foreground_app,
             pet_watch_repos,
-            save_file
+            save_file,
+            ui_language::set_ui_language
         ])
         // Closing the main window quits the app, including the desktop usage ball (otherwise the hidden or floating
         // ball window would keep the app running with no way back to the main window).

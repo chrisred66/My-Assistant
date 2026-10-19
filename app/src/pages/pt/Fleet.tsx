@@ -12,7 +12,8 @@ import {
   type PtModel,
   type User,
 } from "../../lib/api";
-import { errorMessage, formatInteger } from "../../lib/format";
+import { errorMessage, formatDay, formatInteger } from "../../lib/format";
+import { t } from "../../lib/i18n";
 
 const CATEGORIES = PT_ENERGY_SOURCES;
 const BUS_TYPES = ["City", "Regional", "Intercity", "Double decker", "Coach"];
@@ -29,7 +30,7 @@ function energyColor(energy: string): Color {
 
 /** kWh for battery buses, kg for hydrogen. */
 function capacityUnit(energy: string) {
-  return isHydrogen(energy) ? "kg" : "kWh";
+  return isHydrogen(energy) ? "kg" : t("kWh");
 }
 
 export default function Fleet({ user }: { user: User }) {
@@ -69,8 +70,11 @@ export default function Fleet({ user }: { user: User }) {
 
   async function removeManufacturer(m: PtManufacturer) {
     const ok = window.confirm(
-      `Remove ${m.display_name} with its ${m.models.length} model(s) and ${m.bus_count} bus(es)? ` +
-        "They're moved to the archive tables; trip logs are kept.",
+      t("Remove {name} with its {models} model(s) and {buses} bus(es)? They're moved to the archive tables; trip logs are kept.", {
+        name: m.display_name,
+        models: m.models.length,
+        buses: m.bus_count,
+      }),
     );
     if (!ok) return;
     setError(null);
@@ -91,21 +95,21 @@ export default function Fleet({ user }: { user: User }) {
       {list && (
         <div className="tiles">
           <div className="tile">
-            <span className="tile-label">Buses</span>
+            <span className="tile-label">{t("Buses")}</span>
             <span className="tile-value">{formatInteger(list.reduce((n, m) => n + m.bus_count, 0))}</span>
           </div>
           <div className="tile">
-            <span className="tile-label">Electric / hydrogen buses</span>
+            <span className="tile-label">{t("Electric / hydrogen buses")}</span>
             <span className="tile-value">
               {formatInteger(busesWhere((e) => e === "Electric"))} / {formatInteger(busesWhere(isHydrogen))}
             </span>
           </div>
           <div className="tile">
-            <span className="tile-label">Models</span>
+            <span className="tile-label">{t("Models")}</span>
             <span className="tile-value">{formatInteger(models.length)}</span>
           </div>
           <div className="tile">
-            <span className="tile-label">Manufacturers</span>
+            <span className="tile-label">{t("Manufacturers")}</span>
             <span className="tile-value">{formatInteger(list.length)}</span>
           </div>
         </div>
@@ -115,10 +119,10 @@ export default function Fleet({ user }: { user: User }) {
 
       <div className="card stack">
         <div className="row space-between">
-          <h2>Manufacturers</h2>
+          <h2>{t("Manufacturers")}</h2>
           {canEdit && (
             <button className="small-btn" onClick={() => setShowAdd((s) => !s)} aria-expanded={showAdd}>
-              {showAdd ? "Cancel" : "Add manufacturer…"}
+              {showAdd ? t("Cancel") : t("Add manufacturer…")}
             </button>
           )}
         </div>
@@ -130,15 +134,15 @@ export default function Fleet({ user }: { user: User }) {
             }}
           />
         )}
-        {list === null && !error && <p className="muted">Loading…</p>}
+        {list === null && !error && <p className="muted">{t("Loading…")}</p>}
         {list && (
           <table className="data-table">
             <thead>
               <tr>
-                <th>Manufacturer</th>
-                <th>Category</th>
-                <th>Models</th>
-                <th className="num">Buses</th>
+                <th>{t("Manufacturer")}</th>
+                <th>{t("Category")}</th>
+                <th>{t("Models")}</th>
+                <th className="num">{t("Buses")}</th>
                 {(canEdit || canRemove) && <th />}
               </tr>
             </thead>
@@ -151,17 +155,15 @@ export default function Fleet({ user }: { user: User }) {
                         <strong>{m.display_name}</strong>
                       </button>
                     </td>
-                    <td>{m.category}</td>
+                    <td>{t(m.category)}</td>
                     <td className="small">
                       {m.models.length === 0 ? (
-                        <span className="muted">No models yet</span>
+                        <span className="muted">{t("No models yet")}</span>
                       ) : (
                         m.models.map((md) => (
                           <div key={md.model_id}>
                             {md.model} ({md.model_year}) · {md.bus_length} m {md.bus_type} ·{" "}
-                            <span className={md.bus_count ? undefined : "muted"}>
-                              {md.bus_count} bus{md.bus_count === 1 ? "" : "es"}
-                            </span>
+                            <span className={md.bus_count ? undefined : "muted"}>{t("{bus_count} bus{v}", { bus_count: md.bus_count, v: md.bus_count === 1 ? "" : "es" })}</span>
                           </div>
                         ))
                       )}
@@ -176,12 +178,12 @@ export default function Fleet({ user }: { user: User }) {
                               onClick={() => setAddingModelTo(addingModelTo === m.manufacturer ? null : m.manufacturer)}
                               aria-expanded={addingModelTo === m.manufacturer}
                             >
-                              {addingModelTo === m.manufacturer ? "Cancel" : "Add model…"}
+                              {addingModelTo === m.manufacturer ? t("Cancel") : t("Add model…")}
                             </button>
                           )}
                           {canRemove && (
                             <button className="small-btn danger" onClick={() => void removeManufacturer(m)}>
-                              Remove…
+                              {t("Remove…")}
                             </button>
                           )}
                         </div>
@@ -192,7 +194,7 @@ export default function Fleet({ user }: { user: User }) {
                     <tr className="details-row">
                       <td colSpan={5}>
                         <p className="small">
-                          New vehicle model for <strong>{m.display_name}</strong>
+                          {t("New vehicle model for")} <strong>{m.display_name}</strong>
                         </p>
                         <AddModel
                           manufacturer={m.manufacturer}
@@ -234,25 +236,25 @@ function FleetCharts({ list }: { list: PtManufacturer[] }) {
       label: `${md.maker} ${md.model} (${md.model_year})`,
       value: md.bus_count,
       color: energyColor(md.energy_source),
-      detail: `${md.bus_length} m ${md.bus_type} · ${md.energy_capacity} ${capacityUnit(md.energy_source)}`,
+      detail: `${md.bus_length} m ${t(md.bus_type)} · ${md.energy_capacity} ${capacityUnit(md.energy_source)}`,
     }));
-  const energies = [...new Set(list.flatMap((m) => m.models.filter((md) => md.bus_count > 0).map((md) => (isHydrogen(md.energy_source) ? "Hydrogen" : md.energy_source))))];
+  const energies = [...new Set(list.flatMap((m) => m.models.filter((md) => md.bus_count > 0).map((md) => (isHydrogen(md.energy_source) ? t("Hydrogen") : md.energy_source))))];
   const legend = <SeriesLegend series={energies.map((e) => ({ label: e, color: energyColor(e) }))} />;
   return (
     <div className="chart-grid">
       <div className="card stack">
         <div className="row space-between wrap">
-          <h2>Buses by manufacturer</h2>
+          <h2>{t("Buses by manufacturer")}</h2>
           {energies.length > 1 && legend}
         </div>
-        <BarList items={byMaker} format={(v) => formatInteger(v)} label="Buses by manufacturer" />
+        <BarList items={byMaker} format={(v) => formatInteger(v)} label={t("Buses by manufacturer")} />
       </div>
       <div className="card stack">
         <div className="row space-between wrap">
-          <h2>Buses by model</h2>
+          <h2>{t("Buses by model")}</h2>
           {energies.length > 1 && legend}
         </div>
-        <BarList items={byModel} format={(v) => formatInteger(v)} label="Buses by model" />
+        <BarList items={byModel} format={(v) => formatInteger(v)} label={t("Buses by model")} />
       </div>
     </div>
   );
@@ -284,42 +286,38 @@ function AddManufacturer({ onAdded }: { onAdded: (key: string) => void }) {
     <form className="stack" onSubmit={(e) => void submit(e)}>
       <div className="row wrap">
         <label className="field inline grow">
-          <span>Name</span>
+          <span>{t("Name")}</span>
           <input value={displayName} onChange={(e) => setDisplayName(e.target.value)} required />
         </label>
         <label className="field inline">
-          <span>Short ID (optional)</span>
+          <span>{t("Short ID (optional)")}</span>
           <input
             value={key}
-            placeholder={suggestedKey || "e.g. Wisdom_Motor"}
+            placeholder={suggestedKey || t("e.g. Wisdom_Motor")}
             onChange={(e) => setKey(e.target.value)}
             spellCheck={false}
             aria-describedby="mf-id-help"
           />
         </label>
         <label className="field inline">
-          <span>Category</span>
+          <span>{t("Category")}</span>
           <select value={category} onChange={(e) => setCategory(e.target.value)}>
             {CATEGORIES.map((c) => (
-              <option key={c}>{c}</option>
+              <option key={c} value={c}>
+                {t(c)}
+              </option>
             ))}
           </select>
         </label>
         <button className="primary align-end" type="submit" disabled={busy || !(key.trim() || suggestedKey)}>
-          {busy ? "Adding…" : "Add"}
+          {busy ? t("Adding…") : t("Add")}
         </button>
       </div>
       <p id="mf-id-help" className="muted small">
-        The short ID is how the system refers to this manufacturer internally. It's the start of every model ID (for example{" "}
-        <span className="mono">{(key.trim() || suggestedKey || "Yutong").replace(/[^A-Za-z0-9]/g, "").toUpperCase()}_U12_2024</span>) and can't be
-        changed later. Letters, digits and _ only, no spaces. Leave it empty to use the name
-        {suggestedKey ? (
-          <>
-            {" "}
-            (<span className="mono">{suggestedKey}</span>)
-          </>
-        ) : null}
-        .
+        {t("The short ID is how the system refers to this manufacturer internally. It's the start of every model ID (for example {example}) and can't be changed later. Letters, digits and _ only, no spaces.", {
+          example: `${(key.trim() || suggestedKey || "Yutong").replace(/[^A-Za-z0-9]/g, "").toUpperCase()}_U12_2024`,
+        })}{" "}
+        {suggestedKey ? t("Leave it empty to use the name ({key}).", { key: suggestedKey }) : t("Leave it empty to use the name.")}
       </p>
       <ErrorText message={error} />
     </form>
@@ -360,8 +358,11 @@ function ManufacturerDetail({ user, manufacturer, onBack }: { user: User; manufa
     if (!detail) return;
     const buses = detail.buses.length;
     const ok = window.confirm(
-      `Remove ${detail.display_name} with its ${detail.models.length} model(s) and ${buses} bus(es)? ` +
-        "They're moved to the archive tables; trip logs are kept.",
+      t("Remove {name} with its {models} model(s) and {buses} bus(es)? They're moved to the archive tables; trip logs are kept.", {
+        name: detail.display_name,
+        models: detail.models.length,
+        buses,
+      }),
     );
     if (!ok) return;
     try {
@@ -376,32 +377,32 @@ function ManufacturerDetail({ user, manufacturer, onBack }: { user: User; manufa
     <div className="stack">
       <div className="row space-between">
         <button className="small-btn" onClick={onBack}>
-          ← All manufacturers
+          {t("← All manufacturers")}
         </button>
         {canRemove && detail && (
           <button className="small-btn danger" onClick={() => void removeManufacturer()}>
-            Remove manufacturer…
+            {t("Remove manufacturer…")}
           </button>
         )}
       </div>
       <ErrorText message={error} />
-      {detail === null && !error && <p className="muted">Loading…</p>}
+      {detail === null && !error && <p className="muted">{t("Loading…")}</p>}
       {detail && (
         <>
           <div className="card stack-tight">
             <h2>{detail.display_name}</h2>
             <p className="muted small">
-              {detail.category} · key <span className="mono">{detail.manufacturer}</span> · {detail.models.length} model(s),{" "}
-              {detail.buses.length} bus(es)
+              {t(detail.category)} · {t("key")} <span className="mono">{detail.manufacturer}</span> ·{" "}
+              {t("{models} model(s), {buses} bus(es)", { models: detail.models.length, buses: detail.buses.length })}
             </p>
           </div>
 
           <div className="card stack">
             <div className="row space-between">
-              <h2>Models</h2>
+              <h2>{t("Models")}</h2>
               {canEdit && (
                 <button className="small-btn" onClick={() => setAdding(adding === "model" ? null : "model")} aria-expanded={adding === "model"}>
-                  {adding === "model" ? "Cancel" : "Add model…"}
+                  {adding === "model" ? t("Cancel") : t("Add model…")}
                 </button>
               )}
             </div>
@@ -415,13 +416,13 @@ function ManufacturerDetail({ user, manufacturer, onBack }: { user: User; manufa
               />
             )}
             {detail.models.length === 0 ? (
-              <p className="muted">No models yet.</p>
+              <p className="muted">{t("No models yet.")}</p>
             ) : (
               <ModelsTable
                 models={detail.models}
                 canRemove={canRemove}
                 onRemove={(m) => {
-                  if (window.confirm(`Remove model ${m.model} (${m.model_year})? It's moved to the archive table.`)) {
+                  if (window.confirm(t("Remove model {model} ({model_year})? It's moved to the archive table.", { model: m.model, model_year: m.model_year }))) {
                     void act(() => api.ptRemoveModel(m.model_id));
                   }
                 }}
@@ -431,10 +432,10 @@ function ManufacturerDetail({ user, manufacturer, onBack }: { user: User; manufa
 
           <div className="card stack">
             <div className="row space-between">
-              <h2>Buses</h2>
+              <h2>{t("Buses")}</h2>
               {canEdit && detail.models.length > 0 && (
                 <button className="small-btn" onClick={() => setAdding(adding === "bus" ? null : "bus")} aria-expanded={adding === "bus"}>
-                  {adding === "bus" ? "Cancel" : "Add bus…"}
+                  {adding === "bus" ? t("Cancel") : t("Add bus…")}
                 </button>
               )}
             </div>
@@ -448,16 +449,16 @@ function ManufacturerDetail({ user, manufacturer, onBack }: { user: User; manufa
               />
             )}
             {detail.buses.length === 0 ? (
-              <p className="muted">No buses yet.</p>
+              <p className="muted">{t("No buses yet.")}</p>
             ) : (
               <table className="data-table">
                 <thead>
                   <tr>
-                    <th className="num">Bus</th>
-                    <th>Plate</th>
-                    <th>Model</th>
-                    <th className="num">Trips</th>
-                    <th>Last trip</th>
+                    <th className="num">{t("Bus")}</th>
+                    <th>{t("Plate")}</th>
+                    <th>{t("Model")}</th>
+                    <th className="num">{t("Trips")}</th>
+                    <th>{t("Last trip")}</th>
                     {(canEdit || canRemove) && <th />}
                   </tr>
                 </thead>
@@ -470,7 +471,7 @@ function ManufacturerDetail({ user, manufacturer, onBack }: { user: User; manufa
                         {b.model} ({b.model_year})
                       </td>
                       <td className="num">{formatInteger(b.trip_count)}</td>
-                      <td>{b.last_trip ?? <span className="muted">none</span>}</td>
+                      <td>{b.last_trip ? formatDay(b.last_trip) : <span className="muted">{t("none")}</span>}</td>
                       {(canEdit || canRemove) && (
                         <td className="num">
                           <div className="row">
@@ -478,24 +479,24 @@ function ManufacturerDetail({ user, manufacturer, onBack }: { user: User; manufa
                               <button
                                 className="small-btn"
                                 onClick={() => {
-                                  const plate = window.prompt(`Plate for bus ${b.bus_id}`, b.plate);
+                                  const plate = window.prompt(t("Plate for bus {bus_id}", { bus_id: b.bus_id }), b.plate);
                                   if (plate !== null) void act(() => api.ptSetPlate(b.bus_id, plate));
                                 }}
                               >
-                                Plate…
+                                {t("Plate…")}
                               </button>
                             )}
                             {canRemove && (
                               <button
                                 className="small-btn danger"
                                 onClick={() => {
-                                  const trips = b.trip_count ? ` Its ${b.trip_count} trip(s) stay in the trip log.` : "";
-                                  if (window.confirm(`Remove bus ${b.bus_id}? It's moved to the archive table.${trips}`)) {
+                                  const trips = b.trip_count ? t(" Its {trip_count} trip(s) stay in the trip log.", { trip_count: b.trip_count }) : "";
+                                  if (window.confirm(t("Remove bus {bus_id}? It's moved to the archive table.{trips}", { bus_id: b.bus_id, trips }))) {
                                     void act(() => api.ptRemoveBus(b.bus_id));
                                   }
                                 }}
                               >
-                                Remove
+                                {t("Remove")}
                               </button>
                             )}
                           </div>
@@ -519,14 +520,14 @@ function ModelsTable({ models, canRemove, onRemove }: { models: PtModel[]; canRe
     <table className="data-table">
       <thead>
         <tr>
-          <th>Model</th>
-          <th>Type</th>
-          <th>Energy</th>
+          <th>{t("Model")}</th>
+          <th>{t("Type")}</th>
+          <th>{t("Energy")}</th>
           <th>L × W × H (m)</th>
-          <th className="num">Capacity</th>
-          <th>Charging</th>
-          <th className="num">Weight (t)</th>
-          <th className="num">Buses</th>
+          <th className="num">{t("Capacity")}</th>
+          <th>{t("Charging")}</th>
+          <th className="num">{t("Weight (t)")}</th>
+          <th className="num">{t("Buses")}</th>
           {canRemove && <th />}
         </tr>
       </thead>
@@ -546,11 +547,9 @@ function ModelsTable({ models, canRemove, onRemove }: { models: PtModel[]; canRe
             <td className="small">
               {m.charging_port_count ? (
                 <>
-                  {m.charging_port_count} port(s)
+                  {t("{count} port(s)", { count: m.charging_port_count })}
                   {(m.one_port_intake || m.two_port_intake) > 0 && (
-                    <div className="muted">
-                      {m.one_port_intake} kW one port · {m.two_port_intake} kW two ports
-                    </div>
+                    <div className="muted">{t("{one_port_intake} kW one port · {two_port_intake} kW two ports", { one_port_intake: m.one_port_intake, two_port_intake: m.two_port_intake })}</div>
                   )}
                 </>
               ) : (
@@ -559,7 +558,7 @@ function ModelsTable({ models, canRemove, onRemove }: { models: PtModel[]; canRe
             </td>
             <td className="num">
               {m.curb_weight || "—"}
-              {m.gvw ? <div className="muted small">GVW {m.gvw}</div> : null}
+              {m.gvw ? <div className="muted small">{t("GVW {gvw}", { gvw: m.gvw })}</div> : null}
             </td>
             <td className="num">{formatInteger(m.bus_count)}</td>
             {canRemove && (
@@ -567,10 +566,10 @@ function ModelsTable({ models, canRemove, onRemove }: { models: PtModel[]; canRe
                 <button
                   className="small-btn danger"
                   disabled={m.bus_count > 0}
-                  title={m.bus_count > 0 ? "Remove its buses first" : undefined}
+                  title={m.bus_count > 0 ? t("Remove its buses first") : undefined}
                   onClick={() => onRemove(m)}
                 >
-                  Remove
+                  {t("Remove")}
                 </button>
               </td>
             )}
@@ -644,15 +643,15 @@ function AddModel({ manufacturer, onAdded }: { manufacturer: string; onAdded: ()
     <form className="stack" onSubmit={(e) => void submit(e)}>
       <div className="row wrap">
         <label className="field inline grow">
-          <span>Model</span>
+          <span>{t("Model")}</span>
           <input value={f.model} onChange={set("model")} required />
         </label>
         <label className="field inline">
-          <span>Year</span>
+          <span>{t("Year")}</span>
           <input type="number" min="1990" step="1" value={f.model_year} onChange={set("model_year")} required />
         </label>
         <label className="field inline">
-          <span>Type</span>
+          <span>{t("Type")}</span>
           <input list="pt-bus-types" value={f.bus_type} onChange={set("bus_type")} required />
           <datalist id="pt-bus-types">
             {BUS_TYPES.map((t) => (
@@ -661,32 +660,34 @@ function AddModel({ manufacturer, onAdded }: { manufacturer: string; onAdded: ()
           </datalist>
         </label>
         <label className="field inline">
-          <span>Energy</span>
+          <span>{t("Energy")}</span>
           <select value={f.energy_source} onChange={set("energy_source")}>
             {PT_ENERGY_SOURCES.map((s) => (
-              <option key={s}>{s}</option>
+              <option key={s} value={s}>
+                {t(s)}
+              </option>
             ))}
           </select>
         </label>
       </div>
       <div className="row wrap">
         <label className="field inline">
-          <span>Length (m)</span>
+          <span>{t("Length (m)")}</span>
           <input type="number" min="1" max="30" step="any" value={f.bus_length} onChange={set("bus_length")} required />
         </label>
-        {numField("bus_width", "Width (m)")}
-        {numField("bus_height", "Height (m)")}
-        {numField("axle_count", "Axles", "1")}
-        {numField("curb_weight", "Curb weight (t)")}
-        {numField("gvw", "GVW (optional)", "1")}
+        {numField("bus_width", t("Width (m)"))}
+        {numField("bus_height", t("Height (m)"))}
+        {numField("axle_count", t("Axles"), "1")}
+        {numField("curb_weight", t("Curb weight (t)"))}
+        {numField("gvw", t("GVW (optional)"), "1")}
       </div>
       <div className="row wrap">
-        {numField("energy_capacity", `Capacity (${capacityUnit(f.energy_source)})`)}
-        {numField("charging_port_count", "Charging ports", "1")}
-        {numField("one_port_intake", "One-port intake (kW)", "1")}
-        {numField("two_port_intake", "Two-port intake (kW)", "1")}
+        {numField("energy_capacity", t("Capacity ({energy_source})", { energy_source: capacityUnit(f.energy_source) }))}
+        {numField("charging_port_count", t("Charging ports"), "1")}
+        {numField("one_port_intake", t("One-port intake (kW)"), "1")}
+        {numField("two_port_intake", t("Two-port intake (kW)"), "1")}
         <button className="primary align-end" type="submit" disabled={busy}>
-          {busy ? "Adding…" : "Add model"}
+          {busy ? t("Adding…") : t("Add model")}
         </button>
       </div>
       <ErrorText message={error} />
@@ -719,7 +720,7 @@ function AddBus({ models, onAdded }: { models: PtModel[]; onAdded: () => void })
     <form className="stack" onSubmit={(e) => void submit(e)}>
       <div className="row wrap">
         <label className="field inline grow">
-          <span>Model</span>
+          <span>{t("Model")}</span>
           <select value={modelId} onChange={(e) => setModelId(e.target.value)}>
             {models.map((m) => (
               <option key={m.model_id} value={m.model_id}>
@@ -729,15 +730,15 @@ function AddBus({ models, onAdded }: { models: PtModel[]; onAdded: () => void })
           </select>
         </label>
         <label className="field inline">
-          <span>Bus number (as in trip logs)</span>
-          <input type="number" min="1" step="1" value={busId} placeholder="next free" onChange={(e) => setBusId(e.target.value)} />
+          <span>{t("Bus number (as in trip logs)")}</span>
+          <input type="number" min="1" step="1" value={busId} placeholder={t("next free")} onChange={(e) => setBusId(e.target.value)} />
         </label>
         <label className="field inline">
-          <span>Plate (optional)</span>
+          <span>{t("Plate (optional)")}</span>
           <input value={plate} onChange={(e) => setPlate(e.target.value)} />
         </label>
         <button className="primary align-end" type="submit" disabled={busy || !modelId}>
-          {busy ? "Adding…" : "Add bus"}
+          {busy ? t("Adding…") : t("Add bus")}
         </button>
       </div>
       <ErrorText message={error} />

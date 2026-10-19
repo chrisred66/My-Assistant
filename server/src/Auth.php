@@ -41,7 +41,7 @@ final class Auth
     {
         return self::$current;
     }
-    private const USER_COLUMNS = 'u.id, u.email, u.username, u.display_name, u.role, u.general_plan, u.pt_role, u.pt_module';
+    private const USER_COLUMNS = 'u.id, u.email, u.username, u.display_name, u.language, u.role, u.general_plan, u.pt_role, u.pt_module';
 
     /** $identifier is an email address or a username. */
     public static function login(string $identifier, string $password, string $deviceName): array
@@ -429,6 +429,7 @@ final class Auth
             'username'     => $u['username'],
             'display_name' => ($u['display_name'] ?? '') !== '' ? $u['display_name'] : ($u['username'] ?? $u['email'] ?? ''),
             'has_name'     => ($u['display_name'] ?? '') !== '',
+            'language'     => ($u['language'] ?? 'en') === 'zh' ? 'zh' : 'en',
             'role'         => $u['role'],
             'general_plan' => $u['general_plan'],
             'pt_role'      => $u['pt_role'],

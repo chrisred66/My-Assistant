@@ -2,7 +2,11 @@ import { useCallback, useEffect, useState } from "react";
 import "./App.css";
 import "@fontsource-variable/space-grotesk";
 import "./theme.css";
+import LanguageSwitch from "./components/LanguageSwitch";
 import ThemeSwitch from "./components/ThemeSwitch";
+import UpdateBanner from "./components/UpdateBanner";
+import { startUpdateChecks, versionLabel } from "./lib/updates";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import BackToTop from "./components/BackToTop";
 import { RolePicker, RoleSwitcher } from "./components/RolePicker";
 import { AccountSwitcher } from "./components/AccountSwitcher";
@@ -21,6 +25,7 @@ import { watchDailyFeed } from "./lib/feedNotify";
 import { isDesktop } from "./lib/platform";
 import { listen } from "@tauri-apps/api/event";
 import { serveActivityRequests } from "./lib/activity";
+import { getLang, setLang, t, useLang } from "./lib/i18n";
 
 const APP_NAME = "My Assistant";
 
@@ -46,6 +51,7 @@ type Session =
 serveActivityRequests(); // the desktop ball asks what's going on when it opens
 
 export default function App() {
+  const lang = useLang(); // re-render everything when the language changes
   const [session, setSession] = useState<Session>({ state: "loading" });
   const [page, setPage] = useState<Page>("pt");
   const [languageTab, setLanguageTab] = useState<LanguageTab>("recordings");
@@ -69,6 +75,7 @@ export default function App() {
     }
     try {
       const user = await api.me();
+      setLang(user.language); // the language saved with the account, on every device
       setPage((p) => (NAV.find((n) => n.id === p)?.visible(user) ? p : homePage(user)));
       setSession({ state: "signedIn", settings, user });
     } catch (e) {
@@ -83,6 +90,15 @@ export default function App() {
   useEffect(() => {
     void restore();
   }, [restore]);
+
+  // New versions: checked shortly after start and every 6 hours (lib/updates.ts).
+  useEffect(() => startUpdateChecks(), []);
+
+  // The title bar: the app's name and version, "My Assistant (ver. 0.4.2)", in the app's language.
+  useEffect(() => {
+    const title = lang === "zh" ? `${t(APP_NAME)}${versionLabel()}` : `${t(APP_NAME)} ${versionLabel()}`;
+    void getCurrentWindow().setTitle(title).catch(() => {});
+  }, [lang]);
 
   // The desktop usage ball shows usage, which only the Super Admin can see: shown while they're signed in (in any role,
   // if switched on in Settings), hidden otherwise.
@@ -128,7 +144,7 @@ export default function App() {
   }
 
   if (session.state === "loading") {
-    return <div className="center-screen muted">Loading…</div>;
+    return <div className="center-screen muted">{t("Loading…")}</div>;
   }
 
   if (session.state === "signedOut") {
@@ -138,6 +154,10 @@ export default function App() {
         onSignedIn={(settings, user) => {
           setPage(homePage(user));
           setSession({ state: "signedIn", settings, user });
+          // The language chosen on the sign-in screen is the latest choice: save it with the account.
+          if (user.language !== getLang()) {
+            void api.setLanguage(getLang()).then((u) => setSession((s) => (s.state === "signedIn" ? { ...s, user: u } : s)), () => {});
+          }
         }}
       />
     );
@@ -147,14 +167,14 @@ export default function App() {
     return (
       <div className="center-screen">
         <div className="card narrow">
-          <h1>Can't reach the server</h1>
+          <h1>{t("Can't reach the server")}</h1>
           <p className="error-text">{session.message}</p>
-          <p className="muted">Server: {session.settings.serverUrl}</p>
+          <p className="muted">{t("Server: {url}", { url: session.settings.serverUrl })}</p>
           <div className="row">
             <button className="primary" onClick={() => void restore()}>
-              Try again
+              {t("Try again")}
             </button>
-            <button onClick={() => void signOutLocally()}>Change server / sign in again</button>
+            <button onClick={() => void signOutLocally()}>{t("Change server / sign in again")}</button>
           </div>
         </div>
       </div>
@@ -171,7 +191,7 @@ export default function App() {
           setSession({ ...session, user });
         }}
         onSignOut={() => void logout()}
-        signOutLabel={session.user.viewed_by ? "Back to my account" : undefined}
+        signOutLabel={session.user.viewed_by ? t("Back to my account") : undefined}
       />
     );
   }
@@ -186,14 +206,14 @@ export default function App() {
     <div className="shell">
       {/* Narrow screens only (CSS): the page's name and the menu button; the menu slides in from the right. */}
       <header className="mobile-bar">
-        <span className="mobile-bar-title">{NAV.find((n) => n.id === page)?.label ?? APP_NAME}</span>
-        <button className="menu-btn" aria-label="Menu" aria-expanded={navOpen} aria-controls="main-nav" onClick={() => setNavOpen((o) => !o)}>
+        <span className="mobile-bar-title">{t(NAV.find((n) => n.id === page)?.label ?? APP_NAME)}</span>
+        <button className="menu-btn" aria-label={t("Menu")} aria-expanded={navOpen} aria-controls="main-nav" onClick={() => setNavOpen((o) => !o)}>
           ☰
         </button>
       </header>
       {navOpen && <div className="nav-scrim" onClick={() => setNavOpen(false)} aria-hidden />}
-      <nav id="main-nav" className={`sidebar${navOpen ? " open" : ""}`} aria-label="Main">
-        <div className="brand">{APP_NAME}</div>
+      <nav id="main-nav" className={`sidebar${navOpen ? " open" : ""}`} aria-label={t("Main")}>
+        <div className="brand">{t(APP_NAME)}</div>
         {NAV.filter((item) => item.visible(session.user)).map((item) => (
           <button
             key={item.id}
@@ -204,22 +224,31 @@ export default function App() {
               setNavOpen(false);
             }}
           >
-            {item.label}
+            {t(item.label)}
           </button>
         ))}
         <div className="sidebar-footer">
           {session.user.viewed_by && (
             <div className="viewing-as" role="status">
               <span>
-                Viewing as <strong>{session.user.display_name}</strong>
+                {t("Viewing as")} <strong>{session.user.display_name}</strong>
               </span>
               <button className="small-btn" onClick={() => void api.viewAs(null).then(switchAccount)}>
-                Back to my account
+                {t("Back to my account")}
               </button>
             </div>
           )}
           <RoleSwitcher user={session.user} onSwitched={switchRole} />
           <ThemeSwitch />
+          <LanguageSwitch
+            compact
+            onChange={(language) => {
+              // Saved with the account (not while viewing as someone else: that's their setting).
+              if (!session.user.viewed_by) {
+                void api.setLanguage(language).then((u) => setSession((s) => (s.state === "signedIn" ? { ...s, user: u } : s)), () => {});
+              }
+            }}
+          />
           <div className="sidebar-user-row">
             <span className="sidebar-user" title={session.settings.serverUrl}>
               {session.user.display_name}
@@ -239,9 +268,10 @@ export default function App() {
             canTranscribe={session.user.access.transcribe}
           />
         )}
-        {page === "feed" && <DailyFeed user={session.user} />}
-        {page === "usage" && <Usage />}
-        {page === "pt" && <PtManagement user={session.user} />}
+        {/* Keyed by language too: they reload, so labels and messages from the server come in the new language. */}
+        {page === "feed" && <DailyFeed key={lang} user={session.user} />}
+        {page === "usage" && <Usage key={lang} />}
+        {page === "pt" && <PtManagement key={lang} user={session.user} />}
         {page === "settings" && <SettingsPage
             settings={session.settings}
             user={session.user}
@@ -250,6 +280,7 @@ export default function App() {
           />}
         <BackToTop />
       </main>
+      <UpdateBanner />
     </div>
   );
 }

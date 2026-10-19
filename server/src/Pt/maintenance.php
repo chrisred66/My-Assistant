@@ -213,7 +213,7 @@ $router->get('/pt/maintenance/options', function (Request $r) {
         'types' => PT_MAINT_TYPES,
         'statuses' => PT_MAINT_STATUSES,
         'priorities' => PT_MAINT_PRIORITIES,
-        'categories' => array_map(fn ($k, $v) => ['code' => $k, 'label' => $v], array_keys(PT_MAINT_CATEGORIES), PT_MAINT_CATEGORIES),
+        'categories' => array_map(fn ($k, $v) => ['code' => $k, 'label' => \ChrisManager\I18n::t($v)], array_keys(PT_MAINT_CATEGORIES), PT_MAINT_CATEGORIES),
         'workshops' => array_column(GbaDb::all('SELECT display_name FROM manufacturer_db ORDER BY display_name'), 'display_name'),
         'plans' => array_map(fn ($p) => ['plan_id' => (int) $p['plan_id'], 'name' => $p['name'], 'model_id' => $p['model_id']],
             GbaDb::all('SELECT plan_id, name, model_id FROM maintenance_plan_db WHERE active = 1 ORDER BY name')),
@@ -433,7 +433,7 @@ $router->post('/pt/maintenance/import', function (Request $r) {
         'sample' => array_slice($rows, 0, 3), 'remembered' => $saved !== null,
         'columns' => (object) $columns, 'value_maps' => (object) $valueMaps,
         'date_order' => $dateOrder, 'date_order_detected' => $detected,
-        'fields' => array_map(fn ($f, $d) => ['field' => $f, 'label' => $d[0], 'required' => $d[1]], array_keys(MaintImport::FIELDS), MaintImport::FIELDS),
+        'fields' => array_map(fn ($f, $d) => ['field' => $f, 'label' => \ChrisManager\I18n::t($d[0]), 'required' => $d[1]], array_keys(MaintImport::FIELDS), MaintImport::FIELDS),
     ];
     $missing = array_values(array_diff(['bus_id', 'reported_date', 'title'], array_keys($columns)));
     if ($missing) {

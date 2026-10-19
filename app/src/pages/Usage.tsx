@@ -18,9 +18,10 @@ import {
   type UsageSource,
   type UsageView,
 } from "../lib/api";
-import { errorMessage, formatCompact, formatDateTime, formatInteger, formatUsd, LOCALE, toIsoDate, toSqlDateTime } from "../lib/format";
+import { errorMessage, formatCompact, formatDateTime, formatDay, formatInteger, formatUsd, LOCALE, toIsoDate, toSqlDateTime } from "../lib/format";
 import { track } from "../lib/activity";
 import { claudeCodeEntries, claudeCodeRows } from "../lib/claudeCode";
+import { t, tc } from "../lib/i18n";
 
 type Preset = "month" | "7" | "30" | "90" | "custom";
 // Tokens: input and output are drawn as separate bars side by side (output striped).
@@ -157,7 +158,7 @@ export default function Usage() {
         provider: r.provider,
         value: metric === "cost" ? (r.cost_usd ?? 0) : r.input_tokens,
         ...(metric === "tokens" ? { out: r.output_tokens } : {}),
-        detail: `${formatInteger(r.requests)} requests · ${formatCompact(r.input_tokens)} in / ${formatCompact(r.output_tokens)} out`,
+        detail: t("{requests} requests · {input_tokens} in / {output_tokens} out", { requests: formatInteger(r.requests), input_tokens: formatCompact(r.input_tokens), output_tokens: formatCompact(r.output_tokens) }),
       }))
       .sort((a, b) => b.value + (b.out ?? 0) - (a.value + (a.out ?? 0)));
   }, [rows, group, metric]);
@@ -193,7 +194,7 @@ export default function Usage() {
         label: SOURCE_LABELS[p],
         value: sum[p]!.v,
         color: PROVIDER_COLOR[p],
-        detail: `${((sum[p]!.v / total) * 100).toFixed(1)}% of the total · ${formatInteger(sum[p]!.requests)} requests`,
+        detail: t("{v}% of the total · {requests} requests", { v: ((sum[p]!.v / total) * 100).toFixed(1), requests: formatInteger(sum[p]!.requests) }),
       }))
       .sort((a, b) => b.value - a.value);
   }, [rows, metric]);
@@ -203,7 +204,7 @@ export default function Usage() {
     const run: Partial<Record<UsageSource, number>> = {};
     return stacked.map((p) => {
       for (const k of providersPresent) run[k] = (run[k] ?? 0) + (p.values[k] ?? 0) + (p.out?.[k] ?? 0); // tokens: in + out
-      return { label: p.label, title: `${p.title} (to date)`, values: { ...run } };
+      return { label: p.label, title: t("{title} (to date)", { title: p.title }), values: { ...run } };
     });
   }, [stacked, providersPresent]);
 
@@ -214,64 +215,64 @@ export default function Usage() {
   return (
     <section className="page">
       <header className="page-header sticky-head">
-        <h1>Usage</h1>
+        <h1>{t("Usage")}</h1>
         <p className="muted">
           {view === "providers"
-            ? "Everything Anthropic and OpenAI report for your accounts (synced from their usage APIs), DeepSeek usage from this app, Claude Code on this computer, and manual entries."
-            : "Only the calls made through this app."}
+            ? t("Everything Anthropic and OpenAI report for your accounts (synced from their usage APIs), DeepSeek usage from this app, Claude Code on this computer, and manual entries.")
+            : t("Only the calls made through this app.")}
         </p>
       </header>
 
       <div className="filters row wrap">
         <div className="field inline">
-          <span>Data</span>
-          <div className="segmented" role="group" aria-label="Data source">
+          <span>{t("Data")}</span>
+          <div className="segmented" role="group" aria-label={t("Data source")}>
             <button className={view === "providers" ? "on" : ""} aria-pressed={view === "providers"} onClick={() => setView("providers")}>
-              All provider usage
+              {t("All provider usage")}
             </button>
             <button className={view === "app" ? "on" : ""} aria-pressed={view === "app"} onClick={() => setView("app")}>
-              This app only
+              {t("This app only")}
             </button>
           </div>
         </div>
         <label className="field inline">
-          <span>Range</span>
+          <span>{t("Range")}</span>
           <select value={preset} onChange={(e) => choosePreset(e.target.value as Preset)}>
-            <option value="month">This month</option>
-            <option value="7">Last 7 days</option>
-            <option value="30">Last 30 days</option>
-            <option value="90">Last 90 days</option>
-            <option value="custom">Custom…</option>
+            <option value="month">{t("This month")}</option>
+            <option value="7">{t("Last 7 days")}</option>
+            <option value="30">{t("Last 30 days")}</option>
+            <option value="90">{t("Last 90 days")}</option>
+            <option value="custom">{t("Custom…")}</option>
           </select>
         </label>
         {preset === "custom" && (
           <>
             <label className="field inline">
-              <span>From</span>
+              <span>{t("From")}</span>
               <input type="date" value={range.from} max={range.to} onChange={(e) => e.target.value && setRange({ ...range, from: e.target.value })} />
             </label>
             <label className="field inline">
-              <span>To</span>
+              <span>{t("To")}</span>
               <input type="date" value={range.to} min={range.from} onChange={(e) => e.target.value && setRange({ ...range, to: e.target.value })} />
             </label>
           </>
         )}
         <label className="field inline">
-          <span>Group by</span>
+          <span>{t("Group by")}</span>
           <select value={group} onChange={(e) => setGroup(e.target.value as UsageGroup)}>
-            <option value="day">Day</option>
-            <option value="month">Month</option>
-            <option value="model">Model</option>
+            <option value="day">{t("Day")}</option>
+            <option value="month">{t("Month")}</option>
+            <option value="model">{tc("ai", "Model")}</option>
           </select>
         </label>
         <div className="field inline">
-          <span>Show</span>
-          <div className="segmented" role="group" aria-label="Metric">
+          <span>{t("Show")}</span>
+          <div className="segmented" role="group" aria-label={t("Metric")}>
             <button className={metric === "cost" ? "on" : ""} aria-pressed={metric === "cost"} onClick={() => setMetric("cost")}>
-              Cost
+              {t("Cost")}
             </button>
             <button className={metric === "tokens" ? "on" : ""} aria-pressed={metric === "tokens"} onClick={() => setMetric("tokens")}>
-              Tokens
+              {t("Tokens")}
             </button>
           </div>
         </div>
@@ -282,7 +283,7 @@ export default function Usage() {
             void loadSources();
           }}
         >
-          Refresh
+          {t("Refresh")}
         </button>
       </div>
 
@@ -303,37 +304,35 @@ export default function Usage() {
 
       <div className="tiles">
         <div className="tile hero">
-          <span className="tile-label">Total cost</span>
+          <span className="tile-label">{t("Total cost")}</span>
           <span className="tile-value">{formatUsd(totals.cost)}</span>
-          {totals.unpriced > 0 && <span className="muted small">Some usage has no price set and isn't included</span>}
+          {totals.unpriced > 0 && <span className="muted small">{t("Some usage has no price set and isn't included")}</span>}
         </div>
         <div className="tile">
-          <span className="tile-label">Requests</span>
+          <span className="tile-label">{t("Requests")}</span>
           <span className="tile-value">{formatCompact(totals.requests)}</span>
-          {view === "providers" && anthropicSynced && <span className="muted small">Anthropic doesn't report request counts</span>}
+          {view === "providers" && anthropicSynced && <span className="muted small">{t("Anthropic doesn't report request counts")}</span>}
           {rows?.some((r) => r.provider === "claude_code") && (
-            <span className="muted small">Claude Code: from this computer's logs, tokens only (subscription, no cost)</span>
+            <span className="muted small">{t("Claude Code: from this computer's logs, tokens only (subscription, no cost)")}</span>
           )}
         </div>
         <div className="tile">
-          <span className="tile-label">Input tokens</span>
+          <span className="tile-label">{t("Input tokens")}</span>
           <span className="tile-value">{formatCompact(totals.input)}</span>
         </div>
         <div className="tile">
-          <span className="tile-label">Output tokens</span>
+          <span className="tile-label">{t("Output tokens")}</span>
           <span className="tile-value">{formatCompact(totals.output)}</span>
         </div>
       </div>
 
-      {rows === null && <p className="muted">Loading…</p>}
-      {rows?.length === 0 && !error && <p className="muted">No usage in this range yet.</p>}
+      {rows === null && <p className="muted">{t("Loading…")}</p>}
+      {rows?.length === 0 && !error && <p className="muted">{t("No usage in this range yet.")}</p>}
 
       {rows && rows.length > 0 && (
         <div className="card stack">
           <div className="row space-between wrap">
-            <h2>
-              {metric === "cost" ? "Cost" : "Tokens"} by {group === "model" ? "model" : group}
-            </h2>
+            <h2>{t("{v} by {v2}", { v: metric === "cost" ? t("Cost") : t("Tokens"), v2: group === "model" ? "model" : group })}</h2>
             {(providersPresent.length > 1 || metric === "tokens") && <Legend providers={providersPresent} inOut={metric === "tokens"} />}
             {providersPresent.length === 1 && metric === "cost" && <span className="muted small">{SOURCE_LABELS[providersPresent[0]]}</span>}
           </div>
@@ -349,10 +348,10 @@ export default function Usage() {
         <div className="chart-grid">
           <div className="card stack">
             <div className="row space-between wrap">
-              <h2>{metric === "cost" ? "Cost" : "Tokens"} by provider</h2>
+              <h2>{t("{v} by provider", { v: metric === "cost" ? t("Cost") : t("Tokens") })}</h2>
               {metric === "tokens" && <Legend providers={[]} inOut />}
             </div>
-            {metric === "tokens" ? <HorizontalBars items={providerBars} format={fmt} /> : <BarList items={shares} format={fmt} label="Share by provider" />}
+            {metric === "tokens" ? <HorizontalBars items={providerBars} format={fmt} /> : <BarList items={shares} format={fmt} label={t("Share by provider")} />}
             {shares.length > 1 && (
               <p className="muted small">
                 {shares.map((s) => `${s.label} ${((s.value / (shares.reduce((n, x) => n + x.value, 0) || 1)) * 100).toFixed(1)}%`).join(" · ")}
@@ -361,14 +360,14 @@ export default function Usage() {
           </div>
           {group !== "model" && cumulative.length > 1 && (
             <div className="card stack">
-              <h2>Running total{metric === "tokens" ? " (in + out)" : ""}</h2>
+              <h2>{t("Running total{v}", { v: metric === "tokens" ? t(" (in + out)") : "" })}</h2>
               <LineChart
                 points={cumulative}
                 series={providersPresent.map((p) => ({ key: p, label: SOURCE_LABELS[p], color: PROVIDER_COLOR[p] }))}
                 format={fmt}
                 formatTick={fmtTick}
                 height={220}
-                label="Running total by provider"
+                label={t("Running total by provider")}
               />
             </div>
           )}
@@ -379,14 +378,14 @@ export default function Usage() {
         <table className="data-table">
           <thead>
             <tr>
-              <th>{group === "model" ? "Model" : group === "day" ? "Day" : "Month"}</th>
-              <th>Provider</th>
-              <th className="num">Requests</th>
-              <th className="num">Input</th>
-              <th className="num">Output</th>
-              <th className="num">Cache read</th>
-              <th className="num">Audio min</th>
-              <th className="num">Cost</th>
+              <th>{group === "model" ? tc("ai", "Model") : group === "day" ? t("Day") : t("Month")}</th>
+              <th>{t("Provider")}</th>
+              <th className="num">{t("Requests")}</th>
+              <th className="num">{t("Input")}</th>
+              <th className="num">{t("Output")}</th>
+              <th className="num">{t("Cache read")}</th>
+              <th className="num">{t("Audio min")}</th>
+              <th className="num">{t("Cost")}</th>
             </tr>
           </thead>
           <tbody>
@@ -410,7 +409,7 @@ export default function Usage() {
 
       <div>
         <button className="small-btn" onClick={() => setShowForm((s) => !s)} aria-expanded={showForm}>
-          {showForm ? "Hide manual entry" : "Add usage manually…"}
+          {showForm ? t("Hide manual entry") : t("Add usage manually…")}
         </button>
       </div>
       {showForm && <ManualEntry onSaved={() => void load()} />}
@@ -438,14 +437,14 @@ function Sources({
     setError(null);
     setMessage(null);
     try {
-      const res = await track("syncing", "Syncing usage", () => api.syncUsage(range.from, range.to));
+      const res = await track("syncing", t("Syncing usage"), () => api.syncUsage(range.from, range.to));
       const parts = (["anthropic", "openai"] as const).map((p) => {
         const r = res.results[p];
         if (!r) return null;
         if (r.ok) return `${PROVIDER_LABELS[p]}: ${r.rows} rows`;
-        return `${PROVIDER_LABELS[p]}: ${r.skipped ? "not set up" : "failed"}`;
+        return `${PROVIDER_LABELS[p]}: ${r.skipped ? t("not set up") : t("failed")}`;
       });
-      setMessage(`Synced ${res.from} to ${res.to}. ${parts.filter(Boolean).join(" · ")}`);
+      setMessage(t("Synced {from} to {to}. {join}", { from: formatDay(res.from), to: formatDay(res.to), join: parts.filter(Boolean).join(" · ") }));
       onSynced();
     } catch (e) {
       setError(errorMessage(e));
@@ -455,13 +454,11 @@ function Sources({
   }
 
   const syncLine = (s: ProviderSyncStatus) => {
-    if (!s.can_sync) return <span className="muted">Not set up. Add {s.key_setting} to server/.env.</span>;
-    if (s.last_error) return <span className="error-text small">Last sync failed: {s.last_error}</span>;
-    if (!s.synced_at) return <span className="muted">Ready. Not synced yet.</span>;
+    if (!s.can_sync) return <span className="muted">{t("Not set up. Add {key_setting} to server/.env.", { key_setting: s.key_setting })}</span>;
+    if (s.last_error) return <span className="error-text small">{t("Last sync failed: {last_error}", { last_error: s.last_error })}</span>;
+    if (!s.synced_at) return <span className="muted">{t("Ready. Not synced yet.")}</span>;
     return (
-      <span className="muted">
-        Synced {formatDateTime(s.synced_at)} · covers {s.range_from} to {s.range_to}
-      </span>
+      <span className="muted">{t("Synced {synced_at} · covers {range_from} to {range_to}", { synced_at: formatDateTime(s.synced_at), range_from: formatDay(s.range_from), range_to: formatDay(s.range_to) })}</span>
     );
   };
 
@@ -469,46 +466,42 @@ function Sources({
   return (
     <div className="card stack">
       <div className="row space-between wrap">
-        <h2>Sources</h2>
+        <h2>{t("Sources")}</h2>
         <button className="small-btn" onClick={() => void sync()} disabled={syncing || !canSync}>
-          {syncing ? "Syncing…" : "Sync this range from providers"}
+          {syncing ? t("Syncing…") : t("Sync this range from providers")}
         </button>
       </div>
       <dl className="kv">
-        <dt>Anthropic</dt>
+        <dt>{t("Anthropic")}</dt>
         <dd className="small source-row">
           {syncLine(sources.anthropic)}
           <ConsoleBalance url="https://console.anthropic.com/settings/billing" />
         </dd>
-        <dt>OpenAI</dt>
+        <dt>{t("OpenAI")}</dt>
         <dd className="small source-row">
           {syncLine(sources.openai)}
           <ConsoleBalance url="https://platform.openai.com/settings/organization/billing/overview" />
         </dd>
-        <dt>DeepSeek</dt>
+        <dt>{t("DeepSeek")}</dt>
         <dd className="small source-row">
-          <span className="muted">No usage-history API, so usage here comes from this app.</span>
+          <span className="muted">{t("No usage-history API, so usage here comes from this app.")}</span>
           {ds.balance_error ? (
-            <span className="error-text small">Balance unavailable: {ds.balance_error}</span>
+            <span className="error-text small">{t("Balance unavailable: {balance_error}", { balance_error: ds.balance_error })}</span>
           ) : (
             <span>
-              Balance <strong>{balanceText(ds.balance ?? [])}</strong>
+              {t("Balance")} <strong>{balanceText(ds.balance ?? [])}</strong>
               {(ds.balance ?? []).map((b) =>
                 Number(b.granted) > 0 ? (
-                  <span key={b.currency} className="muted">
-                    {" "}
-                    ({money(b.granted, b.currency)} granted credit, spent first · {money(b.topped_up, b.currency)} topped up)
-                  </span>
+                  <span key={b.currency} className="muted">{t("({granted} granted credit, spent first · {topped_up} topped up)", { granted: money(b.granted, b.currency), topped_up: money(b.topped_up, b.currency) })}</span>
                 ) : null,
               )}
-              {ds.available === false && <span className="error-text"> · too low to make requests, top up at platform.deepseek.com</span>}
+              {ds.available === false && <span className="error-text"> {t("· too low to make requests, top up at platform.deepseek.com")}</span>}
             </span>
           )}
         </dd>
       </dl>
       <p className="muted small">
-        Provider data appears a few minutes after use. Calls made through this app are already included in Anthropic's and OpenAI's
-        numbers, so they aren't added twice.
+        {t("Provider data appears a few minutes after use. Calls made through this app are already included in Anthropic's and OpenAI's numbers, so they aren't added twice.")}
       </p>
       {message && <p className="small">{message}</p>}
       <ErrorText message={error} />
@@ -541,7 +534,7 @@ function ManualEntry({ onSaved }: { onSaved: () => void }) {
         note: note.trim() || undefined,
         occurred_at: when ? `${when.replace("T", " ")}:00` : undefined,
       });
-      setMessage("Saved.");
+      setMessage(t("Saved."));
       setInput("");
       setOutput("");
       setNote("");
@@ -555,37 +548,37 @@ function ManualEntry({ onSaved }: { onSaved: () => void }) {
 
   return (
     <form className="card stack" onSubmit={(e) => void submit(e)}>
-      <h2>Manual usage entry</h2>
-      <p className="muted small">For usage from tools that don't go through this server, e.g. the Claude or ChatGPT apps.</p>
+      <h2>{t("Manual usage entry")}</h2>
+      <p className="muted small">{t("For usage from tools that don't go through this server, e.g. the Claude or ChatGPT apps.")}</p>
       <div className="row wrap">
         <label className="field inline">
-          <span>Provider</span>
+          <span>{t("Provider")}</span>
           <ProviderSelect value={provider} onChange={(v) => v && setProvider(v)} allowDefault={false} />
         </label>
         <label className="field inline grow">
-          <span>Model</span>
-          <input value={model} onChange={(e) => setModel(e.target.value)} required placeholder="e.g. claude-sonnet-5-5" spellCheck={false} />
+          <span>{tc("ai", "Model")}</span>
+          <input value={model} onChange={(e) => setModel(e.target.value)} required placeholder={t("e.g. claude-sonnet-5-5")} spellCheck={false} />
         </label>
         <label className="field inline">
-          <span>Input tokens</span>
+          <span>{t("Input tokens")}</span>
           <input type="number" min={0} value={input} onChange={(e) => setInput(e.target.value)} required />
         </label>
         <label className="field inline">
-          <span>Output tokens</span>
+          <span>{t("Output tokens")}</span>
           <input type="number" min={0} value={output} onChange={(e) => setOutput(e.target.value)} required />
         </label>
       </div>
       <div className="row wrap">
         <label className="field inline">
-          <span>When</span>
+          <span>{t("When")}</span>
           <input type="datetime-local" value={when} onChange={(e) => setWhen(e.target.value)} />
         </label>
         <label className="field inline grow">
-          <span>Note</span>
-          <input value={note} onChange={(e) => setNote(e.target.value)} maxLength={255} placeholder="Optional" />
+          <span>{t("Note")}</span>
+          <input value={note} onChange={(e) => setNote(e.target.value)} maxLength={255} placeholder={t("Optional")} />
         </label>
         <button className="primary align-end" type="submit" disabled={busy}>
-          {busy ? "Saving…" : "Save"}
+          {busy ? t("Saving…") : t("Save")}
         </button>
       </div>
       <ErrorText message={error} />
@@ -603,26 +596,26 @@ function Routing() {
     api.routing().then(setRouting, (e) => setError(errorMessage(e)));
   }, []);
 
-  const route = (r: AiRoute) => `${PROVIDER_LABELS[r.provider] ?? r.provider} · ${r.model ?? "model not set"}`;
+  const route = (r: AiRoute) => `${PROVIDER_LABELS[r.provider] ?? r.provider} · ${r.model ?? t("model not set")}`;
 
   return (
     <details className="card">
-      <summary>AI routing</summary>
-      <p className="muted small">Which provider and model each AI job uses; fixed on the server (TRANSLATE_PROVIDER and LIGHT_PROVIDER in server/.env).</p>
+      <summary>{t("AI routing")}</summary>
+      <p className="muted small">{t("Which provider and model each AI job uses; fixed on the server (TRANSLATE_PROVIDER and LIGHT_PROVIDER in server/.env).")}</p>
       <ErrorText message={error} />
       {routing && (
         <dl className="kv">
-          <dt>Translation</dt>
+          <dt>{t("Translation")}</dt>
           <dd>{route(routing.translate)}</dd>
-          <dt>Transcription</dt>
+          <dt>{t("Transcription")}</dt>
           <dd>{route(routing.transcribe)}</dd>
-          <dt>Light tasks</dt>
+          <dt>{t("Light tasks")}</dt>
           <dd>{route(routing.light)}</dd>
-          <dt>PT charging schedule</dt>
+          <dt>{t("PT charging schedule")}</dt>
           <dd>{route(routing.charging)}</dd>
-          <dt>Transcript habits (Chinese)</dt>
+          <dt>{t("Transcript habits (Chinese)")}</dt>
           <dd>{route(routing.habits_zh)}</dd>
-          <dt>Transcript habits (other)</dt>
+          <dt>{t("Transcript habits (other)")}</dt>
           <dd>{route(routing.habits_other)}</dd>
         </dl>
       )}
@@ -646,7 +639,7 @@ function balanceText(balance: { currency: string; total: string }[]) {
 function ConsoleBalance({ url }: { url: string }) {
   return (
     <span className="muted">
-      Balance: no API for it,{" "}
+      {t("Balance: no API for it,")}{" "}
       <a
         href={url}
         onClick={(e) => {
@@ -654,7 +647,7 @@ function ConsoleBalance({ url }: { url: string }) {
           void openUrl(url).catch(() => window.open(url, "_blank"));
         }}
       >
-        see the billing page
+        {t("see the billing page")}
       </a>
     </span>
   );

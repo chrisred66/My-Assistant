@@ -1,12 +1,16 @@
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { ErrorText } from "../components/common";
 import { api, type ActivityEntry, type Device, type GeneralPlan, type ManagedUser, type PtModule, type PtRole, type Role, type User } from "../lib/api";
 import { ballEnabled, setBallEnabled } from "../lib/ball";
 import { clearSkin, loadPack, loadSkin, petEnabled, petLook, saveSkinImage, setPetEnabled, setPetLook, setSkinCredit, setSkinFacing, skinCredit, skinFacing, SKIN_MOODS, type LoadedPack, type PetLook, type PetSkin, type SkinMood } from "../lib/pet";
 import ThemeSwitch from "../components/ThemeSwitch";
+import LanguageSwitch from "../components/LanguageSwitch";
+import { checkForUpdates, currentVersion, getAutoUpdate, RELEASES_URL, setAutoUpdate, useUpdates } from "../lib/updates";
 import { isDesktop } from "../lib/platform";
 import { errorMessage, formatDateTime } from "../lib/format";
 import type { Settings } from "../lib/settings";
+import { t } from "../lib/i18n";
 
 interface Props {
   settings: Settings;
@@ -22,28 +26,28 @@ const MODULE_LABELS: Record<PtModule, string> = { operations: "Operations", main
 
 /** "Maintenance Manager", "Big Man (all PT)", "No access". */
 function ptLabel(role: PtRole, module: PtModule | null): string {
-  return (role === "manager" || role === "staff") && module ? `${MODULE_LABELS[module]} ${PT_ROLE_LABELS[role]}` : PT_ROLE_LABELS[role];
+  return (role === "manager" || role === "staff") && module ? `${t(MODULE_LABELS[module])} ${t(PT_ROLE_LABELS[role])}` : t(PT_ROLE_LABELS[role]);
 }
 
 /** One line describing the account: "Super Admin", or "General User free · PT Maintenance Low Man". */
 function groupsLabel(u: User): string {
-  if (u.role !== "user") return ROLE_LABELS[u.role];
+  if (u.role !== "user") return t(ROLE_LABELS[u.role]);
   const plan = u.access.general_plan; // PT users without a plan of their own are free
   const parts = [
-    plan !== "none" ? `General User ${PLAN_LABELS[plan].toLowerCase()}${u.general_plan === "none" ? " (with PT)" : ""}` : null,
-    u.pt_role !== "none" ? `PT ${ptLabel(u.pt_role, u.pt_module)}` : null,
+    plan !== "none" ? t("General User {lowerCase}{v}", { lowerCase: t(PLAN_LABELS[plan]).toLowerCase(), v: u.general_plan === "none" ? t(" (with PT)") : "" }) : null,
+    u.pt_role !== "none" ? t("PT {role}", { role: ptLabel(u.pt_role, u.pt_module) }) : null,
   ];
-  return parts.filter(Boolean).join(" · ") || "No access yet";
+  return parts.filter(Boolean).join(" · ") || t("No access yet");
 }
 
 export default function SettingsPage({ settings, user, onLogout, onUserChange }: Props) {
   const [check, setCheck] = useState<string | null>(null);
 
   async function testConnection() {
-    setCheck("Checking…");
+    setCheck(t("Checking…"));
     try {
       const h = await api.health(settings.serverUrl);
-      setCheck(h.ok ? `Reachable · server time ${h.time}` : "Server answered, but not OK.");
+      setCheck(h.ok ? t("Reachable · server time {time}", { time: h.time }) : t("Server answered, but not OK."));
     } catch (e) {
       setCheck(errorMessage(e));
     }
@@ -52,37 +56,47 @@ export default function SettingsPage({ settings, user, onLogout, onUserChange }:
   return (
     <section className="page">
       <header className="page-header sticky-head">
-        <h1>Settings</h1>
+        <h1>{t("Settings")}</h1>
       </header>
 
       <div className="card stack">
         <dl className="kv">
-          <dt>Signed in as</dt>
+          <dt>{t("Signed in as")}</dt>
           <dd>
             {user.display_name}
             {user.email && user.email !== user.display_name ? ` (${user.email})` : ""}
             {" · "}
-            {user.active_role ? (user.roles.find((r) => r.id === user.active_role)?.label ?? groupsLabel(user)) : groupsLabel(user)}
-            {user.roles.length > 1 && <span className="muted small"> (switch roles in the sidebar)</span>}
+            {user.active_role ? t(user.roles.find((r) => r.id === user.active_role)?.label ?? groupsLabel(user)) : groupsLabel(user)}
+            {user.roles.length > 1 && <span className="muted small"> {t("(switch roles in the sidebar)")}</span>}
           </dd>
-          <dt>Server</dt>
+          <dt>{t("Server")}</dt>
           <dd className="mono">{settings.serverUrl}</dd>
-          <dt>This device</dt>
+          <dt>{t("This device")}</dt>
           <dd>{settings.deviceName}</dd>
         </dl>
         <div className="row wrap">
-          <button onClick={() => void testConnection()}>Test connection</button>
+          <button onClick={() => void testConnection()}>{t("Test connection")}</button>
           {check && <span className="muted small">{check}</span>}
         </div>
       </div>
 
       <div className="card stack">
-        <h2>Appearance</h2>
+        <h2>{t("Appearance")}</h2>
         <div className="row wrap">
           <ThemeSwitch />
-          <span className="muted small align-end">Follow the system, light or dark. Remembered on this device.</span>
+          <span className="muted small align-end">{t("Follow the system, light or dark. Remembered on this device.")}</span>
+        </div>
+        <div className="row wrap">
+          <LanguageSwitch
+            onChange={(language) => {
+              // Saved with your account, so it follows you to every device (not while viewing as someone else).
+              if (!user.viewed_by) void api.setLanguage(language).then(onUserChange, () => {});
+            }}
+          />
+          <span className="muted small align-end">{t("The app's language. Saved with your account, so it follows you to every device.")}</span>
         </div>
       </div>
+      <UpdatesSetting />
       <YourName user={user} onUserChange={onUserChange} />
       {isDesktop && user.access.usage && <UsageBallSetting />}
       {isDesktop && user.access.usage && <PetSetting />}
@@ -92,14 +106,13 @@ export default function SettingsPage({ settings, user, onLogout, onUserChange }:
       {user.access.manage_users && <Activity me={user} />}
 
       <div className="card stack">
-        <h2>Sign out</h2>
+        <h2>{t("Sign out")}</h2>
         <p className="muted small">
-          Revokes this device's token on the server. To switch servers (for example to your desktop's Tailscale address), sign out and
-          sign in again with the new address.
+          {t("Revokes this device's token on the server. To switch servers (for example to your desktop's Tailscale address), sign out and sign in again with the new address.")}
         </p>
         <div>
           <button className="danger" onClick={onLogout}>
-            Sign out
+            {t("Sign out")}
           </button>
         </div>
       </div>
@@ -128,14 +141,13 @@ function UsageBallSetting() {
 
   return (
     <div className="card stack">
-      <h2>Desktop usage ball</h2>
+      <h2>{t("Desktop usage ball")}</h2>
       <label className="check">
         <input type="checkbox" checked={!!on} disabled={on === null} onChange={(e) => void toggle(e.target.checked)} />
-        Show a floating ball on the desktop with token usage
+        {t("Show a floating ball on the desktop with token usage")}
       </label>
       <p className="muted small">
-        It stays on top of other windows and switches provider every 6 seconds, showing tokens used today and this month (refreshed every 2
-        minutes). Drag it anywhere; double-click it to bring this window back. It closes when you quit the app.
+        {t("It stays on top of other windows and switches provider every 6 seconds, showing tokens used today and this month (refreshed every 2 minutes). Drag it anywhere; double-click it to bring this window back. It closes when you quit the app.")}
       </p>
       <ErrorText message={error} />
     </div>
@@ -162,15 +174,13 @@ function PetSetting() {
 
   return (
     <div className="card stack">
-      <h2>Desktop pet</h2>
+      <h2>{t("Desktop pet")}</h2>
       <label className="check">
         <input type="checkbox" checked={!!on} disabled={on === null} onChange={(e) => void toggle(e.target.checked)} />
-        Show the blue whale on the desktop
+        {t("Show the blue whale on the desktop")}
       </label>
       <p className="muted small">
-        It swims around the screen and eats a bowl of rice whenever tokens are used, getting rounder through the day. It shows what you're doing
-        (headphones while you record), sleeps late at night and gets hungry at meal times. Click it for today's tokens, stroke it to make it happy,
-        double-click to open this window, drag it anywhere, right-click for Stay here / Swim around. It hides while another app is full screen.
+        {t("It swims around the screen and eats a bowl of rice whenever tokens are used, getting rounder through the day. It shows what you're doing (headphones while you record), sleeps late at night and gets hungry at meal times. Click it for today's tokens, stroke it to make it happy, double-click to open this window, drag it anywhere, right-click for Stay here / Swim around. It hides while another app is full screen.")}
       </p>
       <ErrorText message={error} />
       <PetLookSetting />
@@ -197,14 +207,14 @@ function PetLookSetting() {
   return (
     <div className="stack-tight">
       <label className="field inline">
-        <span>Character</span>
+        <span>{t("Character")}</span>
         <select value={look} onChange={(e) => void choose(e.target.value as PetLook)}>
-          <option value="auto">Automatic (best available)</option>
+          <option value="auto">{t("Automatic (best available)")}</option>
           <option value="pack" disabled={!pack}>
-            {pack ? `Animation pack: ${pack.pack.name}` : "Animation pack (not installed)"}
+            {pack ? t("Animation pack: {name}", { name: pack.pack.name }) : t("Animation pack (not installed)")}
           </option>
-          <option value="images">Your images (below)</option>
-          <option value="whale">Built-in whale</option>
+          <option value="images">{t("Your images (below)")}</option>
+          <option value="whale">{t("Built-in whale")}</option>
         </select>
       </label>
       {pack && (
@@ -264,19 +274,18 @@ function PetSkinSetting() {
   const any = Object.keys(skin).length > 0;
   return (
     <details className="pet-skin" open={any}>
-      <summary>Look: {any ? "your images" : "built-in whale"}</summary>
+      <summary>{t("Look: {v}", { v: any ? t("your images") : t("built-in whale") })}</summary>
       <p className="muted small">
-        Use your own character: an image (PNG, GIF, WebP; animated GIFs work, transparent backgrounds look best) for each mood. Missing moods use
-        Idle, and the rice bowl, Zzz and hearts are added around it. Only use images you're allowed to use.
+        {t("Use your own character: an image (PNG, GIF, WebP; animated GIFs work, transparent backgrounds look best) for each mood. Missing moods use Idle, and the rice bowl, Zzz and hearts are added around it. Only use images you're allowed to use.")}
       </p>
       <div className="pet-skin-grid">
         {SKIN_MOODS.map((m) => (
           <div key={m} className="pet-skin-slot">
-            <div className="pet-skin-preview">{skin[m] ? <img src={skin[m]} alt={MOOD_LABELS[m]} /> : <span className="muted small">{m === "idle" ? "None" : "Uses Idle"}</span>}</div>
-            <strong className="small">{MOOD_LABELS[m]}</strong>
+            <div className="pet-skin-preview">{skin[m] ? <img src={skin[m]} alt={t(MOOD_LABELS[m])} /> : <span className="muted small">{m === "idle" ? t("None") : t("Uses Idle")}</span>}</div>
+            <strong className="small">{t(MOOD_LABELS[m])}</strong>
             <div className="row">
               <label className="small-btn file-btn">
-                {busy === m ? "Saving…" : skin[m] ? "Replace" : "Choose…"}
+                {busy === m ? t("Saving…") : skin[m] ? t("Replace") : t("Choose…")}
                 <input
                   type="file"
                   accept="image/png,image/gif,image/webp,image/jpeg"
@@ -290,7 +299,7 @@ function PetSkinSetting() {
               </label>
               {skin[m] && (
                 <button className="link-btn small" disabled={busy !== null} onClick={() => void run(m, () => clearSkin(m))}>
-                  Remove
+                  {t("Remove")}
                 </button>
               )}
             </div>
@@ -299,28 +308,28 @@ function PetSkinSetting() {
       </div>
       <div className="row wrap">
         <label className="field inline">
-          <span>The images face</span>
+          <span>{t("The images face")}</span>
           <select value={facing} onChange={(e) => void run("all", () => setSkinFacing(e.target.value as "left" | "right"))}>
-            <option value="right">Right</option>
-            <option value="left">Left</option>
+            <option value="right">{t("Right")}</option>
+            <option value="left">{t("Left")}</option>
           </select>
         </label>
         <label className="field inline grow">
-          <span>Credits</span>
+          <span>{t("Credits")}</span>
           <input
             value={credit}
             onChange={(e) => setCredit(e.target.value)}
             onBlur={() => void setSkinCredit(credit).catch(() => {})}
-            placeholder="Who made these images, and under what licence"
+            placeholder={t("Who made these images, and under what licence")}
           />
         </label>
         {any && (
           <button
             className="small-btn align-end"
             disabled={busy !== null}
-            onClick={() => window.confirm("Remove all images and go back to the whale?") && void run("all", () => clearSkin(null))}
+            onClick={() => window.confirm(t("Remove all images and go back to the whale?")) && void run("all", () => clearSkin(null))}
           >
-            Remove all
+            {t("Remove all")}
           </button>
         )}
       </div>
@@ -353,19 +362,19 @@ function YourName({ user, onUserChange }: { user: User; onUserChange: (u: User) 
 
   return (
     <form className="card stack" onSubmit={(e) => void submit(e)}>
-      <h2>Your name</h2>
-      <p className="muted small">Shown at the bottom of the sidebar. Leave it empty to show your login ({user.username ?? user.email}) instead.</p>
+      <h2>{t("Your name")}</h2>
+      <p className="muted small">{t("Shown at the bottom of the sidebar. Leave it empty to show your login ({v}) instead.", { v: user.username ?? user.email })}</p>
       <div className="row wrap">
         <label className="field inline grow">
-          <span>Name</span>
+          <span>{t("Name")}</span>
           <input value={name} onChange={(e) => setName(e.target.value)} maxLength={100} autoComplete="name" />
         </label>
         <button className="primary align-end" type="submit" disabled={busy}>
-          {busy ? "Saving…" : "Save"}
+          {busy ? t("Saving…") : t("Save")}
         </button>
       </div>
       <ErrorText message={error} />
-      {done && <p className="small">Saved.</p>}
+      {done && <p className="small">{t("Saved.")}</p>}
     </form>
   );
 }
@@ -384,7 +393,7 @@ function ChangePassword({ onSignedOut }: { onSignedOut: () => void }) {
     setError(null);
     setDone(false);
     if (next !== confirm) {
-      setError("The new passwords don't match.");
+      setError(t("The new passwords don't match."));
       return;
     }
     setBusy(true);
@@ -394,7 +403,7 @@ function ChangePassword({ onSignedOut }: { onSignedOut: () => void }) {
       setCurrent("");
       setNext("");
       setConfirm("");
-      window.alert("Password changed. You've been signed out on all your devices: sign in again with your new password.");
+      window.alert(t("Password changed. You've been signed out on all your devices: sign in again with your new password."));
       onSignedOut();
     } catch (err) {
       setError(errorMessage(err));
@@ -405,26 +414,26 @@ function ChangePassword({ onSignedOut }: { onSignedOut: () => void }) {
 
   return (
     <form className="card stack" onSubmit={(e) => void submit(e)}>
-      <h2>Change password</h2>
+      <h2>{t("Change password")}</h2>
       <div className="row wrap">
         <label className="field inline grow">
-          <span>Current password</span>
+          <span>{t("Current password")}</span>
           <input type="password" value={current} onChange={(e) => setCurrent(e.target.value)} required autoComplete="current-password" />
         </label>
         <label className="field inline grow">
-          <span>New password (12+ characters)</span>
+          <span>{t("New password (12+ characters)")}</span>
           <input type="password" value={next} onChange={(e) => setNext(e.target.value)} required minLength={12} autoComplete="new-password" />
         </label>
         <label className="field inline grow">
-          <span>Confirm new password</span>
+          <span>{t("Confirm new password")}</span>
           <input type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} required autoComplete="new-password" />
         </label>
         <button className="primary align-end" type="submit" disabled={busy}>
-          {busy ? "Saving…" : "Change"}
+          {busy ? t("Saving…") : t("Change")}
         </button>
       </div>
       <ErrorText message={error} />
-      {done && <p className="small">Password changed.</p>}
+      {done && <p className="small">{t("Password changed.")}</p>}
     </form>
   );
 }
@@ -459,26 +468,19 @@ function Users({ me }: { me: User }) {
   }
 
   async function resetPassword(u: ManagedUser) {
-    const password = window.prompt(`New password for ${u.display_name} (12+ characters). They'll be signed out everywhere.`);
+    const password = window.prompt(t("New password for {display_name} (12+ characters). They'll be signed out everywhere.", { display_name: u.display_name }));
     if (password) await update(u, { password });
   }
 
   return (
     <div className="card stack">
       <div className="row space-between">
-        <h2>Users</h2>
+        <h2>{t("Users")}</h2>
         <button className="small-btn" onClick={() => setShowAdd((s) => !s)} aria-expanded={showAdd}>
-          {showAdd ? "Cancel" : "Add user…"}
+          {showAdd ? t("Cancel") : t("Add user…")}
         </button>
       </div>
-      <p className="muted small">
-        Each account has a General User plan (the General Tool: Recordings, Translate, Transcripts, Daily Feed) and a PT role. Free: record
-        (audio only) and 300 words of translation a day, no transcription. Paid: 3,000 words of translation and 60 minutes of transcription
-        (recordings and meetings together) a day. Everyone has 125 MB of audio storage. PT users get Free unless given Paid. PT Managers and
-        Low Man work in one module (Planning = Fleet, Trials, Charging); Low Man can view and add, Managers can also edit, close and delete.
-        Admins manage accounts below Admin and use the General Tool as Paid; they see PT only with a PT role.{" "}
-        {me.account_role === "super_admin" ? "" : "Admins can change accounts below Admin only."}
-      </p>
+      <p className="muted small">{t("Each account has a General User plan (the General Tool: Recordings, Translate, Transcripts, Daily Feed) and a PT role. Free: record (audio only) and 300 words of translation a day, no transcription. Paid: 3,000 words of translation and 60 minutes of transcription (recordings and meetings together) a day. Everyone has 125 MB of audio storage. PT users get Free unless given Paid. PT Managers and Low Man work in one module (Planning = Fleet, Trials, Charging); Low Man can view and add, Managers can also edit, close and delete. Admins manage accounts below Admin and use the General Tool as Paid; they see PT only with a PT role. {v}", { v: me.account_role === "super_admin" ? "" : t("Admins can change accounts below Admin only.") })}</p>
       {showAdd && (
         <AddUser
           me={me}
@@ -494,11 +496,11 @@ function Users({ me }: { me: User }) {
           <table className="data-table">
             <thead>
               <tr>
-                <th>Name</th>
-                <th>Role</th>
-                <th>General User</th>
-                <th>PT Management</th>
-                <th>Added</th>
+                <th>{t("Name")}</th>
+                <th>{t("Role")}</th>
+                <th>{t("General User")}</th>
+                <th>{t("PT Management")}</th>
+                <th>{t("Added")}</th>
                 <th />
               </tr>
             </thead>
@@ -512,34 +514,34 @@ function Users({ me }: { me: User }) {
                   </td>
                   <td>
                     {u.editable && me.account_role === "super_admin" ? (
-                      <select value={u.role} onChange={(e) => void update(u, { role: e.target.value as "admin" | "user" })} aria-label={`Role of ${u.display_name}`}>
-                        <option value="user">User</option>
-                        <option value="admin">Admin</option>
+                      <select value={u.role} onChange={(e) => void update(u, { role: e.target.value as "admin" | "user" })} aria-label={t("Role of {display_name}", { display_name: u.display_name })}>
+                        <option value="user">{t("User")}</option>
+                        <option value="admin">{t("Admin")}</option>
                       </select>
                     ) : (
-                      ROLE_LABELS[u.role]
+                      t(ROLE_LABELS[u.role])
                     )}
                   </td>
                   <td>
                     {u.role !== "user" ? (
-                      <span className="muted small">{u.role === "admin" ? "Paid" : "all"}</span>
+                      <span className="muted small">{u.role === "admin" ? t("Paid") : "all"}</span>
                     ) : u.editable ? (
-                      <select value={u.general_plan} onChange={(e) => void update(u, { general_plan: e.target.value as GeneralPlan })} aria-label={`General User plan of ${u.display_name}`}>
+                      <select value={u.general_plan} onChange={(e) => void update(u, { general_plan: e.target.value as GeneralPlan })} aria-label={t("General User plan of {display_name}", { display_name: u.display_name })}>
                         {(Object.keys(PLAN_LABELS) as GeneralPlan[]).map((p) => (
                           <option key={p} value={p}>
-                            {p === "none" && u.pt_role !== "none" ? "Free (with PT)" : PLAN_LABELS[p]}
+                            {p === "none" && u.pt_role !== "none" ? t("Free (with PT)") : t(PLAN_LABELS[p])}
                           </option>
                         ))}
                       </select>
                     ) : u.general_plan === "none" && u.pt_role !== "none" ? (
-                      "Free (with PT)"
+                      t("Free (with PT)")
                     ) : (
-                      PLAN_LABELS[u.general_plan]
+                      t(PLAN_LABELS[u.general_plan])
                     )}
                   </td>
                   <td>
                     {u.role === "super_admin" ? (
-                      <span className="muted small">all</span>
+                      <span className="muted small">{t("all")}</span>
                     ) : u.editable ? (
                       <PtGroupPicker
                         role={u.pt_role}
@@ -556,10 +558,10 @@ function Users({ me }: { me: User }) {
                     {u.editable && (
                       <div className="row">
                         <button className="small-btn" onClick={() => void resetPassword(u)}>
-                          Reset password
+                          {t("Reset password")}
                         </button>
                         <button className="small-btn" onClick={() => void update(u, { disabled: !u.disabled })}>
-                          {u.disabled ? "Enable" : "Disable"}
+                          {u.disabled ? t("Enable") : t("Disable")}
                         </button>
                       </div>
                     )}
@@ -600,20 +602,20 @@ function PtGroupPicker({
           if (next === "none" || next === "big_man") onChange(next, null);
           else if (module) onChange(next, module);
         }}
-        aria-label={`PT role of ${label}`}
+        aria-label={t("PT role of {label}", { label })}
       >
         {(Object.keys(PT_ROLE_LABELS) as PtRole[]).map((x) => (
           <option key={x} value={x}>
-            {PT_ROLE_LABELS[x]}
+            {t(PT_ROLE_LABELS[x])}
           </option>
         ))}
       </select>
       {needsModule && (
-        <select value={module ?? ""} onChange={(e) => e.target.value && onChange(r, e.target.value as PtModule)} aria-label={`PT module of ${label}`}>
-          {!module && <option value="">Module…</option>}
+        <select value={module ?? ""} onChange={(e) => e.target.value && onChange(r, e.target.value as PtModule)} aria-label={t("PT module of {label}", { label })}>
+          {!module && <option value="">{t("Module…")}</option>}
           {(Object.keys(MODULE_LABELS) as PtModule[]).map((m) => (
             <option key={m} value={m}>
-              {MODULE_LABELS[m]}
+              {t(MODULE_LABELS[m])}
             </option>
           ))}
         </select>
@@ -662,59 +664,59 @@ function AddUser({ me, onAdded }: { me: User; onAdded: () => void }) {
     <form className="stack adjust-panel" onSubmit={(e) => void submit(e)}>
       <div className="row wrap">
         <label className="field inline">
-          <span>Username</span>
+          <span>{t("Username")}</span>
           <input value={username} onChange={(e) => setUsername(e.target.value)} spellCheck={false} />
         </label>
         <label className="field inline grow">
-          <span>Email (optional)</span>
+          <span>{t("Email (optional)")}</span>
           <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
         </label>
         <label className="field inline grow">
-          <span>Display name</span>
+          <span>{t("Display name")}</span>
           <input value={displayName} onChange={(e) => setDisplayName(e.target.value)} />
         </label>
       </div>
       <div className="row wrap">
         {me.account_role === "super_admin" && (
           <label className="field inline">
-            <span>Role</span>
+            <span>{t("Role")}</span>
             <select value={role} onChange={(e) => setRole(e.target.value as "user" | "admin")}>
-              <option value="user">User</option>
-              <option value="admin">Admin (manages users; General Tool as Paid; PT only with a PT role)</option>
+              <option value="user">{t("User")}</option>
+              <option value="admin">{t("Admin (manages users; General Tool as Paid; PT only with a PT role)")}</option>
             </select>
           </label>
         )}
         <>
             {role === "user" && (
               <label className="field inline">
-                <span>General User</span>
+                <span>{t("General User")}</span>
                 <select value={plan} onChange={(e) => setPlan(e.target.value as GeneralPlan)}>
                   {(Object.keys(PLAN_LABELS) as GeneralPlan[]).map((p) => (
                     <option key={p} value={p}>
-                      {PLAN_LABELS[p]}
+                      {t(PLAN_LABELS[p])}
                     </option>
                   ))}
                 </select>
               </label>
             )}
             <label className="field inline">
-              <span>PT role</span>
+              <span>{t("PT role")}</span>
               <select value={ptRole} onChange={(e) => setPtRole(e.target.value as PtRole)}>
                 {(Object.keys(PT_ROLE_LABELS) as PtRole[]).map((x) => (
                   <option key={x} value={x}>
-                    {PT_ROLE_LABELS[x]}
+                    {t(PT_ROLE_LABELS[x])}
                   </option>
                 ))}
               </select>
             </label>
             {needsModule && (
               <label className="field inline">
-                <span>PT module</span>
+                <span>{t("PT module")}</span>
                 <select value={ptModule} onChange={(e) => setPtModule(e.target.value as PtModule)} required>
-                  <option value="">Choose…</option>
+                  <option value="">{t("Choose…")}</option>
                   {(Object.keys(MODULE_LABELS) as PtModule[]).map((m) => (
                     <option key={m} value={m}>
-                      {MODULE_LABELS[m]}
+                      {t(MODULE_LABELS[m])}
                     </option>
                   ))}
                 </select>
@@ -722,11 +724,11 @@ function AddUser({ me, onAdded }: { me: User; onAdded: () => void }) {
             )}
         </>
         <label className="field inline grow">
-          <span>Initial password (12+ characters)</span>
+          <span>{t("Initial password (12+ characters)")}</span>
           <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required minLength={12} autoComplete="new-password" />
         </label>
         <button className="primary align-end" type="submit" disabled={busy || (!username.trim() && !email.trim()) || (needsModule && !ptModule)}>
-          {busy ? "Adding…" : "Add user"}
+          {busy ? t("Adding…") : t("Add user")}
         </button>
       </div>
       <ErrorText message={error} />
@@ -756,22 +758,22 @@ function Devices() {
   return (
     <div className="card stack">
       <div className="row space-between wrap">
-        <h2>Your devices</h2>
+        <h2>{t("Your devices")}</h2>
         {others > 0 && (
           <button className="small-btn" onClick={() => void run(api.signOutOtherDevices)}>
-            Sign out all other devices
+            {t("Sign out all other devices")}
           </button>
         )}
       </div>
-      <p className="muted small">Where your account is signed in. Sign out a device you've lost or no longer use; it will need your password again.</p>
+      <p className="muted small">{t("Where your account is signed in. Sign out a device you've lost or no longer use; it will need your password again.")}</p>
       <ErrorText message={error} />
       {devices && (
         <table className="data-table">
           <thead>
             <tr>
-              <th>Device</th>
-              <th>Signed in</th>
-              <th>Last used</th>
+              <th>{t("Device")}</th>
+              <th>{t("Signed in")}</th>
+              <th>{t("Last used")}</th>
               <th />
             </tr>
           </thead>
@@ -779,15 +781,15 @@ function Devices() {
             {devices.map((d) => (
               <tr key={d.id}>
                 <td>
-                  {d.device || "Unnamed device"}
-                  {d.current && <> <span className="badge badge-good">this device</span></>}
+                  {d.device || t("Unnamed device")}
+                  {d.current && <> <span className="badge badge-good">{t("this device")}</span></>}
                 </td>
                 <td className="nowrap">{formatDateTime(d.signed_in_at)}</td>
                 <td className="nowrap">{d.last_used_at ? formatDateTime(d.last_used_at) : "—"}</td>
                 <td className="num">
                   {!d.current && (
                     <button className="small-btn" onClick={() => void run(() => api.signOutDevice(d.id))}>
-                      Sign out
+                      {t("Sign out")}
                     </button>
                   )}
                 </td>
@@ -796,6 +798,72 @@ function Devices() {
           </tbody>
         </table>
       )}
+    </div>
+  );
+}
+
+/** This device's app version, automatic updates (desktop) and "Check for updates". */
+function UpdatesSetting() {
+  const u = useUpdates();
+  const [version, setVersion] = useState("");
+  const [auto, setAuto] = useState<boolean | null>(null);
+  useEffect(() => {
+    void currentVersion().then(setVersion);
+    void getAutoUpdate().then(setAuto);
+  }, []);
+
+  const status =
+    u.phase === "checking" ? t("Checking…")
+    : u.phase === "none" ? t("You have the latest version.")
+    : u.phase === "available" ? t("Version {version} is available.", { version: u.version ?? "" })
+    : u.phase === "downloading" ? t("Downloading version {version}…", { version: u.version ?? "" })
+    : u.phase === "ready" ? t("Version {version} is ready: restart to finish updating.", { version: u.version ?? "" })
+    : u.phase === "installing" ? t("Installing the update…")
+    : u.phase === "error" ? t("Couldn't check for updates: {error}", { error: u.error ?? "" })
+    : "";
+
+  return (
+    <div className="card stack">
+      <h2>{t("Updates")}</h2>
+      <p className="muted small">{t("This is version {version}.", { version: version || "…" })}</p>
+      {isDesktop ? (
+        <>
+          <label className="check">
+            <input
+              type="checkbox"
+              checked={!!auto}
+              disabled={auto === null}
+              onChange={(e) => {
+                setAuto(e.target.checked);
+                void setAutoUpdate(e.target.checked);
+              }}
+            />
+            {t("Update automatically")}
+          </label>
+          <p className="muted small">
+            {t("On: new versions download in the background and you're asked to restart when one is ready. Off: you're asked before anything is downloaded. Remembered on this device.")}
+          </p>
+        </>
+      ) : (
+        <p className="muted small">
+          {t("The phone app can't update itself: when a new version is out you'll get a link to download it.")}{" "}
+          <a
+            href={RELEASES_URL}
+            onClick={(e) => {
+              e.preventDefault();
+              void openUrl(RELEASES_URL).catch(() => window.open(RELEASES_URL, "_blank"));
+            }}
+          >
+            {t("All releases")}
+          </a>
+        </p>
+      )}
+      <div className="row wrap">
+        <button onClick={() => void checkForUpdates(true)} disabled={u.phase === "checking" || u.phase === "downloading" || u.phase === "installing"}>
+          {t("Check for updates")}
+        </button>
+        {status && <span className={`small align-end ${u.phase === "error" ? "error-text" : "muted"}`}>{status}</span>}
+      </div>
     </div>
   );
 }
@@ -837,7 +905,7 @@ const ACTIONS: [RegExp, string][] = [
 
 function actionLabel(a: ActivityEntry): string {
   const hit = ACTIONS.find(([re]) => re.test(a.action));
-  return hit ? hit[1] : a.action;
+  return hit ? t(hit[1]) : a.action;
 }
 
 /** Administrators: what people did (the Super Admin sees everyone; Admins see accounts below Admin). */
@@ -876,17 +944,14 @@ function Activity({ me }: { me: User }) {
 
   return (
     <details className="card" open={open} onToggle={(e) => setOpen((e.target as HTMLDetailsElement).open)}>
-      <summary>Activity</summary>
+      <summary>{t("Activity")}</summary>
       <div className="stack">
-        <p className="muted small">
-          Every change people make, every sign-in attempt, and everything opened while the Super Admin views as someone. Only the action is
-          kept, never what was typed or recorded. Kept for a year.{me.account_role === "super_admin" ? "" : " You see accounts below Admin."}
-        </p>
+        <p className="muted small">{t("Every change people make, every sign-in attempt, and everything opened while the Super Admin views as someone. Only the action is kept, never what was typed or recorded. Kept for a year.{v}", { v: me.account_role === "super_admin" ? "" : t(" You see accounts below Admin.") })}</p>
         <div className="row wrap">
           <label className="field inline">
-            <span>Person</span>
+            <span>{t("Person")}</span>
             <select value={userId} onChange={(e) => setUserId(e.target.value === "" ? "" : Number(e.target.value))}>
-              <option value="">Everyone</option>
+              <option value="">{t("Everyone")}</option>
               {users.map((u) => (
                 <option key={u.id} value={u.id}>
                   {u.display_name}
@@ -895,11 +960,11 @@ function Activity({ me }: { me: User }) {
             </select>
           </label>
           <label className="field inline">
-            <span>From</span>
+            <span>{t("From")}</span>
             <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
           </label>
           <label className="field inline">
-            <span>To</span>
+            <span>{t("To")}</span>
             <input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
           </label>
         </div>
@@ -908,11 +973,11 @@ function Activity({ me }: { me: User }) {
           <table className="data-table">
             <thead>
               <tr>
-                <th>When</th>
-                <th>Who</th>
-                <th>What</th>
-                <th>Result</th>
-                <th>From</th>
+                <th>{t("When")}</th>
+                <th>{t("Who")}</th>
+                <th>{t("What")}</th>
+                <th>{t("Result")}</th>
+                <th>{t("From")}</th>
               </tr>
             </thead>
             <tbody>
@@ -921,13 +986,13 @@ function Activity({ me }: { me: User }) {
                   <td className="nowrap">{formatDateTime(a.created_at)}</td>
                   <td>
                     {a.user_name ?? (a.target ? <span className="mono small">{a.target}</span> : "—")}
-                    {a.viewed_by_name && <div className="muted small">viewed by {a.viewed_by_name}</div>}
+                    {a.viewed_by_name && <div className="muted small">{t("viewed by {viewed_by_name}", { viewed_by_name: a.viewed_by_name })}</div>}
                   </td>
                   <td>
                     {actionLabel(a)}
                     <div className="muted small mono">{a.action}</div>
                   </td>
-                  <td>{a.status === null ? "" : a.status < 400 ? "OK" : a.status === 429 ? "Limit reached" : a.status === 403 ? "Not allowed" : `Failed (${a.status})`}</td>
+                  <td>{a.status === null ? "" : a.status < 400 ? "OK" : a.status === 429 ? t("Limit reached") : a.status === 403 ? t("Not allowed") : t("Failed ({status})", { status: a.status })}</td>
                   <td className="small">
                     {a.ip}
                     {a.device && <div className="muted small" title={a.device}>{a.device.slice(0, 40)}</div>}
@@ -937,12 +1002,10 @@ function Activity({ me }: { me: User }) {
             </tbody>
           </table>
         </div>
-        {rows.length === 0 && !error && <p className="muted small">Nothing yet.</p>}
+        {rows.length === 0 && !error && <p className="muted small">{t("Nothing yet.")}</p>}
         {rows.length < total && (
           <div>
-            <button className="small-btn" onClick={() => void load(rows.length)}>
-              Show more ({total - rows.length} older)
-            </button>
+            <button className="small-btn" onClick={() => void load(rows.length)}>{t("Show more ({v} older)", { v: total - rows.length })}</button>
           </div>
         )}
       </div>

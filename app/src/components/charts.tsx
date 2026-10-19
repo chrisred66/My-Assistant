@@ -3,6 +3,7 @@
 // (good / warning / serious / critical) for states. One y-axis per chart: measures in different units go in
 // separate charts. Every chart has a hover tooltip; the tables on each page are the accessible fallback.
 import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from "react";
+import { t } from "../lib/i18n";
 
 export type Color =
   | `c${1 | 2 | 3 | 4 | 5 | 6 | 7 | 8}`
@@ -113,7 +114,7 @@ export function Swatch({ color }: { color: Color }) {
 
 export function SeriesLegend({ series }: { series: { label: string; color: Color }[] }) {
   return (
-    <ul className="legend" aria-label="Legend">
+    <ul className="legend" aria-label={t("Legend")}>
       {series.map((s) => (
         <li key={s.label}>
           <Swatch color={s.color} />
@@ -228,7 +229,7 @@ export function ColumnChart({
           {series.length > 1 && (
             <div className="tooltip-row total">
               <span />
-              <span>Total</span>
+              <span>{t("Total")}</span>
               <span className="num">{format(totals[hover])}</span>
             </div>
           )}

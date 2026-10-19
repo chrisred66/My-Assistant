@@ -9,6 +9,7 @@ A personal toolkit. The desktop app is called **My Assistant**.
 - **General Tool**: translation, recording with live transcription and translation, meetings with speaker labels,
   and transcripts that learn from your corrections.
 - **Usage**: tokens and cost across Claude, OpenAI, DeepSeek and Claude Code, with provider sync and balances.
+- **English or 简体中文**: each account picks its language; the server's messages follow it.
 - **Desktop companions**: an always-on-top usage ball, and a desktop pet (蓝色小肥鱼 by
   [PC2005-cloud](https://github.com/PC2005-cloud/dsh-pet); see [Credits and sources](#credits-and-sources)).
 
@@ -126,8 +127,8 @@ People sign in with a username or email. Settings → Users manages accounts.
 - The Super Admin can **view as** another account (button next to their name): the app shows that account's pages and
   data, without signing in as it.
 - **Daily allowances** (reset at midnight): translation counts the words of the original text (Chinese and Japanese:
-  two characters per word; English is never translated); transcription counts minutes of audio, live recordings,
-  transcribed recordings and meetings together. **Storage**: 125 MB of audio per person; when a new recording goes over,
+  two characters per word; text already in the target language is never translated); transcription counts minutes
+  of audio, live recordings, transcribed recordings and meetings together. **Storage**: 125 MB of audio per person; when a new recording goes over,
   the oldest recordings' audio is removed (their transcripts stay), and "Save audio…" keeps a copy on your own device.
 - **Security**: 5 wrong passwords for a login (or 20 from one network) within 15 minutes lock it for 15 minutes.
   Changing your password signs you out everywhere; Settings → Your devices lists your sign-ins and signs any out.
@@ -202,7 +203,7 @@ Base address: `https://<your-tunnel-domain>` (on the server PC itself also `http
 | POST | `/auth/logout` | Revokes the current token |
 | GET | `/auth/me` | Current user, `roles`, `active_role` and `access` (what the account can do) |
 | POST | `/auth/role` | `{role}`: switches the active role |
-| POST | `/auth/profile` · `/auth/password` | Sets your display name · changes your password (signs out every device) |
+| POST | `/auth/profile` · `/auth/password` | Sets your display name and/or language (`en` · `zh`) · changes your password (signs out every device) |
 | GET · DELETE | `/auth/devices` · `/auth/devices/{id}` | Your sign-ins · signs one out |
 | POST | `/auth/devices/sign-out-others` | Signs out every device but this one |
 | GET | `/activity` | `?user&from&to&limit&offset`: the activity log (Super Admin; Admins for accounts below Admin) |
@@ -212,16 +213,16 @@ Base address: `https://<your-tunnel-domain>` (on the server PC itself also `http
 
 | Method | Path | Does |
 |---|---|---|
-| POST | `/ai/translate` | `{text}`: Arabic → English, saved as a transcript (counts against the word allowance) |
+| POST | `/ai/translate` | `{text, target?}`: any language → `target` (default the account's language), saved as a transcript (counts against the word allowance) |
 | POST | `/live`, `/live/{id}/chunk`, `/live/{id}/finish` | Live recording: start, transcribe and translate each short chunk, save the audio |
 | POST | `/recordings` | Multipart `audio`, `title?`, `transcribe=1?`: stores a recording, optionally transcribed and translated |
-| GET | `/recordings` | Your latest 200 recordings with transcript and English |
+| GET | `/recordings` | Your latest 200 recordings with transcript and translation (`target_lang`) |
 | GET | `/recordings/storage` · `/recordings/{id}/audio` | Your storage used of 125 MB · a recording's audio file, to save locally |
 | POST · DELETE | `/recordings/{id}` | Renames · deletes a recording and its audio |
 | POST | `/recordings/{id}/transcribe` | Transcribes a saved recording again |
 | GET | `/transcripts` | Your latest 200 transcripts |
 | POST · DELETE | `/transcripts/{id}` | Edits · deletes a transcript |
-| POST | `/transcripts/{id}/translate` | Translates a transcript to English |
+| POST | `/transcripts/{id}/translate` | `{target?}`: translates a transcript (default the account's language) |
 | POST | `/transcripts/learn` | Learns from your corrections (paid) |
 | GET · POST | `/transcripts/habits` | The learned rules; remove one or forget a language |
 | POST | `/meetings`, `/meetings/{id}/chunk`, `/meetings/{id}/translate` | Meeting recording with speaker labels (paid) |
@@ -308,6 +309,22 @@ The app shows the pet credits and links in Settings → Desktop pet and in the p
 this project or a build of it, keep this section and don't bundle the third-party clips or images without following
 their terms.
 
+## Releasing
+
+The desktop app updates itself from GitHub releases (Settings → Updates: automatic, or ask first). Updates must be
+signed with the updater key, so build releases with:
+
+```
+cd app
+npm run release -- "What's new (shown in the update prompt)"
+```
+
+It builds the signed installer and writes `app/release/`: the setup .exe and its `.sig`, the .msi, `latest.json` (what
+the app checks, at `releases/latest/download/latest.json`) and `SHA256SUMS.txt`. Add the Android APK and upload
+everything to the release `v<version>`. The key is read from `TAURI_SIGNING_PRIVATE_KEY` (+ `_PASSWORD`) or from
+`%USERPROFILE%\.android-keys\my-assistant-updater.key`; a plain `npm run tauri build` fails without it. The phone app
+can't install updates itself: it shows a link to the new release.
+
 ## Licence
 
 No licence is granted yet: you may read this code, but not copy, modify or redistribute it. The third-party pet
@@ -316,6 +333,8 @@ assets above have their own terms and aren't in this repository.
 ## Rules
 
 - Never commit `.env` or API keys. Keep them in a password manager.
+- Never commit or replace the signing keys (Android keystore, updater key). Losing the updater key means installed apps
+  can't be updated any more.
 - Never commit the pet's animation pack or images (`pet-pack/`, `pet-skin/`).
 - Never edit a migration that has already run. Add `00N_description.sql` instead.
 - `git pull` before you start, `git push` when you stop.

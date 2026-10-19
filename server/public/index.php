@@ -26,7 +26,7 @@ try {
     Activity::request($req, 200);
 } catch (HttpException $e) {
     http_response_code($e->status);
-    echo json_encode(['error' => $e->getMessage()], JSON_UNESCAPED_UNICODE);
+    echo json_encode(['error' => class_exists(\ChrisManager\I18n::class) ? \ChrisManager\I18n::t($e->getMessage()) : $e->getMessage()], JSON_UNESCAPED_UNICODE);
     if ($req !== null && $e->status !== 401) {
         Activity::request($req, $e->status); // refused and failed actions too (not unsigned-in noise)
     }
@@ -34,7 +34,7 @@ try {
     error_log((string) $e);
     http_response_code(500);
     $debug   = class_exists(Env::class, false) && Env::bool('APP_DEBUG');
-    $message = $debug ? get_class($e) . ': ' . $e->getMessage() : 'Server error';
+    $message = $debug ? get_class($e) . ': ' . $e->getMessage() : \ChrisManager\I18n::t('Server error');
     echo json_encode(['error' => $message], JSON_UNESCAPED_UNICODE);
     if ($req !== null && class_exists(Activity::class)) {
         Activity::request($req, 500);

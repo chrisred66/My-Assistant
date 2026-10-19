@@ -11,6 +11,38 @@ Unreleased to the version and date, and bump the app version in
 
 ## [Unreleased]
 
+### Added
+- **English / 简体中文** (`lib/i18n.ts`, `lib/i18n/zh.ts`; server `I18n`, `src/i18n/zh.php`; migration
+  `014_user_language.sql`): the whole app, including the server's messages, switches between English and Simplified
+  Chinese. Switches on the sign-in screen, in the sidebar under the theme switch, and under Settings → Appearance; the
+  choice is saved with the account, so it follows the person to every device. Dates and numbers follow the language,
+  including the plain dates in PT tables; pages reload when it changes, so text from the server switches too. The
+  desktop app's built-in controls (date pickers) follow it from the next start (windows are created by the app with
+  the saved language, `ui_language.rs`). Anything untranslated stays English.
+- **Translate into any language** (`Translator`, `lib/targetLanguage.ts`, migration `016_translation_target.sql`):
+  Translate, recordings, meetings and transcripts translate into the account's language by default, or into another
+  one picked under **Translate into** (English, 简体中文, Arabic, French, German, Spanish, Russian, Japanese, Korean,
+  Hindi, Urdu), remembered on the device, separately for Translate and for transcription. The source language is
+  detected, so the Translate page takes any language, not only Arabic. Translations show which language they're in;
+  text already in that language isn't translated or counted.
+- **Updates** (`lib/updates.ts`, Tauri updater and process plugins): the desktop app checks GitHub releases at start
+  and every 6 hours. With **Update automatically** on (Settings → Updates; the default, per device) a new version
+  downloads in the background and the app asks to restart; off, it asks before downloading. Settings shows the
+  version and has **Check for updates**; the phone app shows a download link instead. Releases are signed and built
+  with `npm run release` (README → Releasing). The first version with updates has to be installed by hand.
+- **Version in the title bar**: "My Assistant (ver. 0.4.2)", the release the build is published as. The dev version
+  shows "(dev. ver. …)" with the version its changes will be released as (the newest GitHub release plus one).
+- **Daily Feed**:
+  - Topics in the reader's language (migration `015_feed_topic_names.sql`): each topic gets an English and a Chinese
+    name from the light AI model when it's added (older topics the first time they're listed), used for the topic
+    chips, feed tabs and titles.
+  - A calendar: when the day buttons don't all fit, the ones that do are shown with a 📅 button that opens a month
+    view of every day with a feed (up to a year back).
+
+### Fixed
+- **Phones**: the page header (title, description, tabs) scrolled while staying pinned, so the page slid underneath
+  it. It now scrolls away with the page; only the slim top bar stays.
+
 ## [0.4.1] - 2026-10-15
 
 Phone layout fixes, and the repository is public.

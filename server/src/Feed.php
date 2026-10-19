@@ -57,13 +57,41 @@ final class Feed
 
     // ---- topics -------------------------------------------------------------------------------------------------
 
-    /** The user's topics (not removed), with when each starts. */
+    /** The user's topics (not removed), with when each starts and their names in English and Chinese. */
     public static function topics(int $userId): array
     {
+        self::nameTopics($userId);
         return Db::all(
-            'SELECT id, topic, include_zh, effective_from FROM feed_topics WHERE user_id = ? AND removed_at IS NULL ORDER BY id',
+            'SELECT id, topic, COALESCE(topic_en, topic) AS topic_en, COALESCE(topic_zh, topic) AS topic_zh, include_zh, effective_from
+             FROM feed_topics WHERE user_id = ? AND removed_at IS NULL ORDER BY id',
             [$userId],
         );
+    }
+
+    /**
+     * Every topic the user has followed (removed ones too, as older feeds name them) => its names, for showing feeds
+     * in the reader's language: ['hydrogen buses' => ['en' => 'Hydrogen buses', 'zh' => '氢能源公交'], ...].
+     */
+    public static function topicNames(int $userId): array
+    {
+        $names = [];
+        foreach (Db::all('SELECT topic, topic_en, topic_zh FROM feed_topics WHERE user_id = ? AND topic_en IS NOT NULL ORDER BY id', [$userId]) as $t) {
+            $names[$t['topic']] = ['en' => $t['topic_en'], 'zh' => $t['topic_zh']];
+        }
+        return $names;
+    }
+
+    /** Fills in the English and Chinese names of topics that don't have them yet (a few at a time). */
+    private static function nameTopics(int $userId): void
+    {
+        $missing = Db::all('SELECT id, topic FROM feed_topics WHERE user_id = ? AND topic_en IS NULL ORDER BY removed_at IS NOT NULL, id LIMIT 5', [$userId]);
+        foreach ($missing as $t) {
+            $names = Ai\Light::topicNames($userId, $t['topic']);
+            if ($names === null) {
+                return; // the AI is unavailable: try again next time
+            }
+            Db::run('UPDATE feed_topics SET topic_en = ?, topic_zh = ? WHERE id = ?', [$names['en'], $names['zh'], $t['id']]);
+        }
     }
 
     /** Adds a topic; it starts with tomorrow's feed. */
@@ -81,7 +109,9 @@ final class Feed
         if (count(self::topics($userId)) >= 10) {
             throw new HttpException(422, 'Up to 10 topics');
         }
-        Db::insert('feed_topics', ['user_id' => $userId, 'topic' => $topic, 'effective_from' => date('Y-m-d', strtotime('+1 day'))]);
+        $names = Ai\Light::topicNames($userId, $topic); // null if the AI is unavailable: filled in when next listed
+        Db::insert('feed_topics', ['user_id' => $userId, 'topic' => $topic, 'topic_en' => $names['en'] ?? null, 'topic_zh' => $names['zh'] ?? null,
+            'effective_from' => date('Y-m-d', strtotime('+1 day'))]);
     }
 
     public static function removeTopic(int $userId, int $id): void
@@ -132,7 +162,7 @@ final class Feed
     /** Dates that have feeds, newest first. */
     public static function dates(int $userId): array
     {
-        return array_column(Db::all('SELECT DISTINCT feed_date FROM feeds WHERE user_id = ? ORDER BY feed_date DESC LIMIT 30', [$userId]), 'feed_date');
+        return array_column(Db::all('SELECT DISTINCT feed_date FROM feeds WHERE user_id = ? ORDER BY feed_date DESC LIMIT 366', [$userId]), 'feed_date');
     }
 
     // ---- building -----------------------------------------------------------------------------------------------

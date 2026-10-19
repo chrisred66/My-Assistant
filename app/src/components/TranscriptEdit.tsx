@@ -6,25 +6,29 @@ import { api, type HabitGroup, type LearnResult, type TranscriptHabits } from ".
 import { track } from "../lib/activity";
 import { errorMessage, languageName } from "../lib/format";
 import { ErrorText } from "./common";
+import { t, tn } from "../lib/i18n";
+import { targetName } from "../lib/targetLanguage";
 
 /** Learn from pending edits without holding up the page (the ball shows "Learning"). */
 export function learnInBackground(): Promise<LearnResult | null> {
-  return track("learning", "Learning edits", () => api.learnHabits()).catch(() => null);
+  return track("learning", t("Learning edits"), () => api.learnHabits()).catch(() => null);
 }
 
-/** Original and English side by side, editable. `onSaved(learning)`: learning says your changes are being learned from. */
+/** Original and translation side by side, editable. `onSaved(learning)`: learning says your changes are being learned from. */
 export function TranscriptEditor({
   id,
   source,
   english,
   language,
+  targetLang,
   onSaved,
   onCancel,
 }: {
   id: number;
   source: string;
-  english: string | null;
+  english: string | null; // the translation, in targetLang
   language: string | null;
+  targetLang: string;
   onSaved: (learning: boolean) => void;
   onCancel: () => void;
 }) {
@@ -32,7 +36,7 @@ export function TranscriptEditor({
   const [en, setEn] = useState(english ?? "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const showEnglish = english !== null || language !== "en";
+  const showEnglish = english !== null || language !== targetLang;
 
   async function save() {
     const patch: { source_text?: string; translated_text?: string } = {};
@@ -55,23 +59,23 @@ export function TranscriptEditor({
     <div className="stack-tight transcript-edit">
       <div className={showEnglish ? "two-col" : undefined}>
         <label className="field">
-          <span>Original{language ? ` · ${languageName(language)}` : ""}</span>
+          <span>{t("Original{v}", { v: language ? ` · ${languageName(language)}` : "" })}</span>
           <textarea dir="auto" rows={8} value={text} onChange={(e) => setText(e.target.value)} />
         </label>
         {showEnglish && (
           <label className="field">
-            <span>English</span>
-            <textarea rows={8} value={en} onChange={(e) => setEn(e.target.value)} placeholder="Not translated yet" />
+            <span>{targetName(targetLang)}</span>
+            <textarea rows={8} value={en} onChange={(e) => setEn(e.target.value)} placeholder={t("Not translated yet")} />
           </label>
         )}
       </div>
       <ErrorText message={error} />
       <div className="row">
         <button className="primary" onClick={() => void save()} disabled={busy || !text.trim()}>
-          {busy ? "Saving…" : "Save"}
+          {busy ? t("Saving…") : t("Save")}
         </button>
         <button onClick={onCancel} disabled={busy}>
-          Cancel
+          {t("Cancel")}
         </button>
       </div>
     </div>
@@ -116,21 +120,18 @@ export function LearnedHabits() {
   return (
     <details className="card habits">
       <summary>
-        Learned from your edits
-        {habits && <span className="muted small"> · {total === 0 ? "nothing yet" : `${total} rule${total === 1 ? "" : "s"}`}</span>}
+        {t("Learned from your edits")}
+        {habits && <span className="muted small"> · {total === 0 ? t("nothing yet") : tn(total, "{n} rule", "{n} rules")}</span>}
       </summary>
       <p className="muted small">
-        When you correct a recording's transcript, the changes you keep making (names, terms, misheard words, punctuation, fillers) become rules
-        that are applied to your new transcripts.
+        {t("When you correct a recording's transcript, the changes you keep making (names, terms, misheard words, punctuation, fillers) become rules that are applied to your new transcripts.")}
       </p>
       <ErrorText message={error} />
       {habits && habits.pending > 0 && (
         <div className="row">
-          <span className="small">
-            {habits.pending} edit{habits.pending === 1 ? "" : "s"} not learned yet.
-          </span>
-          <button className="small-btn" disabled={busy} onClick={() => void change(() => track("learning", "Learning edits", () => api.learnHabits()))}>
-            {busy ? "Learning…" : "Learn now"}
+          <span className="small">{t("{pending} edit{v} not learned yet.", { pending: habits.pending, v: habits.pending === 1 ? "" : "s" })}</span>
+          <button className="small-btn" disabled={busy} onClick={() => void change(() => track("learning", t("Learning edits"), () => api.learnHabits()))}>
+            {busy ? t("Learning…") : t("Learn now")}
           </button>
         </div>
       )}
@@ -141,13 +142,13 @@ export function LearnedHabits() {
           return (
             <div key={g} className="stack-tight">
               <div className="row space-between">
-                <h3>{GROUP_LABELS[g]}</h3>
+                <h3>{t(GROUP_LABELS[g])}</h3>
                 <button
                   className="link-btn small"
                   disabled={busy}
-                  onClick={() => window.confirm(`Forget everything learned for ${GROUP_LABELS[g].toLowerCase()}?`) && void change(() => api.setHabits(g, []))}
+                  onClick={() => window.confirm(t("Forget everything learned for {lowerCase}?", { lowerCase: t(GROUP_LABELS[g]).toLowerCase() })) && void change(() => api.setHabits(g, []))}
                 >
-                  Forget all
+                  {t("Forget all")}
                 </button>
               </div>
               <ul className="habit-list">
@@ -156,8 +157,8 @@ export function LearnedHabits() {
                     <span dir="auto">{rule}</span>
                     <button
                       className="link-btn small"
-                      aria-label={`Remove rule: ${rule}`}
-                      title="Remove this rule"
+                      aria-label={t("Remove rule: {rule}", { rule })}
+                      title={t("Remove this rule")}
                       disabled={busy}
                       onClick={() => void change(() => api.setHabits(g, rules.filter((_, j) => j !== i)))}
                     >

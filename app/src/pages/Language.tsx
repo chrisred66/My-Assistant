@@ -2,9 +2,11 @@
 // recording keeps going while you look at Transcripts.
 import { useEffect, useState } from "react";
 import { api, type User } from "../lib/api";
+import { formatInteger } from "../lib/format";
 import Recordings from "./Recordings";
 import Transcripts from "./Transcripts";
 import Translate from "./Translate";
+import { t } from "../lib/i18n";
 
 export type LanguageTab = "translate" | "recordings" | "transcripts";
 
@@ -12,9 +14,9 @@ const TABS: { id: LanguageTab; label: string; description: string }[] = [
   {
     id: "recordings",
     label: "Recordings",
-    description: "Speak and watch the transcript appear. Anything not in English is translated as you go. The recording is saved when you stop.",
+    description: "Speak and watch the transcript appear. Anything in another language is translated into yours (or the one you choose) as you go. The recording is saved when you stop.",
   },
-  { id: "translate", label: "Translate", description: "Arabic text to English, translated by AI. Your translations are listed below the form, where you can edit or delete them." },
+  { id: "translate", label: "Translate", description: "Text in any language, translated by AI into yours (or the one you choose). Your translations are listed below the form, where you can edit or delete them." },
   { id: "transcripts", label: "Transcripts", description: "Your latest 200 transcripts, from recordings and typed text. Edit or delete any of them; corrections to recordings' transcripts are learned from." },
 ];
 
@@ -32,12 +34,14 @@ function AllowanceLine({ free }: { free: boolean }) {
     };
   }, []);
   if (!a || a.words.limit === null) return null;
-  const parts = [`${a.words.used.toLocaleString()} of ${a.words.limit.toLocaleString()} words translated`];
-  if (a.transcribe_minutes.limit) parts.push(`${a.transcribe_minutes.used} of ${a.transcribe_minutes.limit} minutes transcribed`);
+  const parts = [t("{used} of {limit} words translated", { used: formatInteger(a.words.used), limit: formatInteger(a.words.limit) })];
+  if (a.transcribe_minutes.limit) {
+    parts.push(t("{used} of {limit} minutes transcribed", { used: a.transcribe_minutes.used, limit: a.transcribe_minutes.limit }));
+  }
   return (
     <p className="small">
-      Today: {parts.join(" · ")}. Resets at midnight.
-      {free && " Free plan: recordings are saved as audio only; transcription is on the paid plan."}
+      {t("Today: {parts}. Resets at midnight.", { parts: parts.join(" · ") })}
+      {free && " " + t("Free plan: recordings are saved as audio only; transcription is on the paid plan.")}
     </p>
   );
 }
@@ -63,16 +67,16 @@ export default function Language({
     <section className="page">
       <div className="sticky-head">
         <header className="page-header">
-          <h1>General Tool</h1>
+          <h1>{t("General Tool")}</h1>
         </header>
-        <div className="segmented" role="tablist" aria-label="General Tool">
-          {TABS.map((t) => (
-            <button key={t.id} role="tab" aria-selected={tab === t.id} className={tab === t.id ? "on" : ""} onClick={() => choose(t.id)}>
-              {t.label}
+        <div className="segmented" role="tablist" aria-label={t("General Tool")}>
+          {TABS.map((item) => (
+            <button key={item.id} role="tab" aria-selected={tab === item.id} className={tab === item.id ? "on" : ""} onClick={() => choose(item.id)}>
+              {t(item.label)}
             </button>
           ))}
         </div>
-        <p className="muted small">{current.description}</p>
+        <p className="muted small">{t(current.description)}</p>
         <AllowanceLine free={!canTranscribe} />
       </div>
       {opened.has("recordings") && <div hidden={tab !== "recordings"}><Recordings canTranscribe={canTranscribe} /></div>}

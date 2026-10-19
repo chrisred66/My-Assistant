@@ -5,6 +5,9 @@ import { LinePairs } from "../components/LinePairs";
 import { api, type Transcript } from "../lib/api";
 import { errorMessage, formatDateTime, languageName } from "../lib/format";
 import { track } from "../lib/activity";
+import { t } from "../lib/i18n";
+import TargetPicker from "../components/TargetPicker";
+import { targetName, useTarget } from "../lib/targetLanguage";
 
 /** `canTranscribe` false (free plan): no learning from edits (there are no transcripts of recordings to apply it to). */
 export default function Transcripts({ canTranscribe = true }: { canTranscribe?: boolean }) {
@@ -29,7 +32,7 @@ export default function Transcripts({ canTranscribe = true }: { canTranscribe?: 
     const q = query.trim().toLowerCase();
     if (!items || !q) return items;
     return items.filter(
-      (t) => t.source_text.toLowerCase().includes(q) || (t.translated_text ?? "").toLowerCase().includes(q),
+      (tRow) => tRow.source_text.toLowerCase().includes(q) || (tRow.translated_text ?? "").toLowerCase().includes(q),
     );
   }, [items, query]);
 
@@ -41,23 +44,24 @@ export default function Transcripts({ canTranscribe = true }: { canTranscribe?: 
         <input
           className="grow"
           type="search"
-          placeholder="Search original or English…"
+          placeholder={t("Search original or translation…")}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          aria-label="Search transcripts"
+          aria-label={t("Search transcripts")}
         />
+        {canTranscribe && <TargetPicker purpose="transcribe" />}
         <button className="small-btn" onClick={() => void refresh()}>
-          Refresh
+          {t("Refresh")}
         </button>
       </div>
 
       <ErrorText message={error} />
-      {items === null && !error && <p className="muted">Loading…</p>}
-      {filtered?.length === 0 && <p className="muted">{query ? "No matches." : "No transcripts yet."}</p>}
+      {items === null && !error && <p className="muted">{t("Loading…")}</p>}
+      {filtered?.length === 0 && <p className="muted">{query ? t("No matches.") : t("No transcripts yet.")}</p>}
 
       <div className="stack">
-        {filtered?.map((t) => (
-          <TranscriptCard key={t.id} transcript={t} onChanged={() => void refresh()} />
+        {filtered?.map((tRow) => (
+          <TranscriptCard key={tRow.id} transcript={tRow} onChanged={() => void refresh()} />
         ))}
       </div>
     </section>
@@ -65,7 +69,10 @@ export default function Transcripts({ canTranscribe = true }: { canTranscribe?: 
 }
 
 /** One transcript or translation: copy, translate, edit, delete. Also used for the Translate page's history. */
-export function TranscriptCard({ transcript: t, onChanged }: { transcript: Transcript; onChanged: () => void }) {
+export function TranscriptCard({ transcript: tr0, onChanged }: { transcript: Transcript; onChanged: () => void }) {
+  // Typed text follows the Translate page's language; recordings' transcripts, transcription's.
+  const [, target] = useTarget(tr0.recording_id ? "transcribe" : "translate");
+  const inTarget = tr0.language === target;
   const [busy, setBusy] = useState(false);
   const [editing, setEditing] = useState(false);
   const [note, setNote] = useState<string | null>(null);
@@ -75,7 +82,7 @@ export function TranscriptCard({ transcript: t, onChanged }: { transcript: Trans
     setBusy(true);
     setError(null);
     try {
-      await track("translating", "Translating", () => api.translateTranscript(t.id));
+      await track("translating", t("Translating"), () => api.translateTranscript(tr0.id, target));
       onChanged();
     } catch (e) {
       setError(errorMessage(e));
@@ -85,12 +92,12 @@ export function TranscriptCard({ transcript: t, onChanged }: { transcript: Trans
   }
 
   async function remove() {
-    const what = t.recording_id ? "this transcript (the recording's audio stays)" : "this translation";
-    if (!window.confirm(`Delete ${what}?`)) return;
+    const what = tr0.recording_id ? t("this transcript (the recording's audio stays)") : t("this translation");
+    if (!window.confirm(t("Delete {what}?", { what }))) return;
     setBusy(true);
     setError(null);
     try {
-      await api.deleteTranscript(t.id);
+      await api.deleteTranscript(tr0.id);
       onChanged();
     } catch (e) {
       setError(errorMessage(e));
@@ -98,35 +105,36 @@ export function TranscriptCard({ transcript: t, onChanged }: { transcript: Trans
     }
   }
 
-  const source = t.recording_id ? `Recording #${t.recording_id}` : "Typed text";
+  const source = tr0.recording_id ? t("Recording #{recording_id}", { recording_id: tr0.recording_id }) : t("Typed text");
 
   return (
     <article className="card transcript">
       <div className="row space-between">
         <span className="muted small">
-          {formatDateTime(t.created_at)} · {source}
+          {formatDateTime(tr0.created_at)} · {source}
         </span>
         {!editing && (
           <div className="row">
             <button className="small-btn" onClick={() => (setEditing(true), setNote(null))} disabled={busy}>
-              Edit
+              {t("Edit")}
             </button>
             <button className="small-btn danger" onClick={() => void remove()} disabled={busy}>
-              Delete
+              {t("Delete")}
             </button>
           </div>
         )}
       </div>
       {editing ? (
         <TranscriptEditor
-          id={t.id}
-          source={t.source_text}
-          english={t.translated_text}
-          language={t.language}
+          id={tr0.id}
+          source={tr0.source_text}
+          english={tr0.translated_text}
+          language={tr0.language}
+          targetLang={tr0.translated_text ? tr0.target_lang : target}
           onCancel={() => setEditing(false)}
           onSaved={(learning) => {
             setEditing(false);
-            setNote(learning ? "Saved. Your corrections will be applied to future transcripts." : "Saved.");
+            setNote(learning ? t("Saved. Your corrections will be applied to future transcripts.") : t("Saved."));
             onChanged();
           }}
         />
@@ -134,21 +142,21 @@ export function TranscriptCard({ transcript: t, onChanged }: { transcript: Trans
         <div className="stack-tight">
           <div className="row space-between wrap">
             <h3>
-              {languageName(t.language)}
-              {t.language !== "en" && " → English"}
+              {languageName(tr0.language)}
+              {(tr0.translated_text || !inTarget) && ` → ${targetName(tr0.translated_text ? tr0.target_lang : target)}`}
             </h3>
             <div className="row">
-              <CopyButton text={t.source_text} label="Copy original" />
-              {t.translated_text && <CopyButton text={t.translated_text} label="Copy English" />}
-              {t.language !== "en" && (
+              <CopyButton text={tr0.source_text} label={t("Copy original")} />
+              {tr0.translated_text && <CopyButton text={tr0.translated_text} label={t("Copy translation")} />}
+              {!inTarget && (
                 <button className="small-btn" onClick={() => void translate()} disabled={busy}>
-                  {busy ? "Translating…" : t.translated_text ? "Translate again" : "Translate"}
+                  {busy ? t("Translating…") : tr0.translated_text ? t("Translate again") : t("Translate")}
                 </button>
               )}
             </div>
           </div>
-          <LinePairs source={t.source_text} english={t.translated_text} />
-          {!t.translated_text && t.language !== "en" && <p className="muted small">Not translated yet.</p>}
+          <LinePairs source={tr0.source_text} english={tr0.translated_text} />
+          {!tr0.translated_text && !inTarget && <p className="muted small">{t("Not translated yet.")}</p>}
         </div>
       )}
       {note && <p className="muted small">{note}</p>}

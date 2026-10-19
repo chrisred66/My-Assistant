@@ -5,6 +5,7 @@ import { emit } from "@tauri-apps/api/event";
 import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
 import { load } from "@tauri-apps/plugin-store";
 import { api } from "./api";
+import { t, tn } from "./i18n";
 
 const CHECK_MS = 5 * 60_000;
 let lastBuildAttempt = 0;
@@ -29,7 +30,7 @@ async function check(): Promise<void> {
   try {
     let ok = await isPermissionGranted();
     if (!ok) ok = (await requestPermission()) === "granted";
-    if (ok) sendNotification({ title: "Your Daily Feed is ready", body: `Today's top stories (${status.ready} ${status.ready === 1 ? "feed" : "feeds"}) are in My Assistant → Daily Feed.` });
+    if (ok) sendNotification({ title: t("Your Daily Feed is ready"), body: tn(status.ready, "Today's top stories ({n} feed) are in My Assistant → Daily Feed.", "Today's top stories ({n} feeds) are in My Assistant → Daily Feed.") });
   } catch {
     // no notifications on this system: the pet still announces it
   }

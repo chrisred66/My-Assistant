@@ -1,6 +1,7 @@
 // Client for the My Assistant PHP API (see server/src/routes.php).
 // Requests go through the Tauri HTTP plugin (Rust side), so the server needs no CORS headers.
 import { fetch } from "@tauri-apps/plugin-http";
+import { getLang, t, type Lang } from "./i18n";
 
 export type Provider = "anthropic" | "openai" | "deepseek";
 export const PROVIDERS: Provider[] = ["anthropic", "openai", "deepseek"];
@@ -38,6 +39,7 @@ export interface User {
   username: string | null;
   display_name: string;
   has_name?: boolean; // false: display_name is the login (username or email) because no name is set
+  language: Lang; // the app's language, saved with the account
   role: Role;
   general_plan: GeneralPlan;
   pt_role: PtRole;
@@ -599,12 +601,14 @@ export interface PtDuplicate {
 export interface TranslateResult {
   id: number;
   translation: string;
+  target_lang: string; // the language it was translated into
   model: string;
   usage: { input_tokens: number; output_tokens: number };
 }
 
-// Transcripts can be in any language: `language` is an ISO 639-1 code where known ("ar", "en", ...),
-// and `english` is null when the speech was already English.
+// Transcripts can be in any language: `language` is an ISO 639-1 code where known ("ar", "en", ...). `english` is the
+// translation, into `target_lang` (the name is from when it was always English), and null when the speech was already
+// in that language.
 
 export interface UploadResult {
   id: number;
@@ -612,6 +616,7 @@ export interface UploadResult {
   text?: string;
   language?: string | null;
   english?: string | null;
+  target_lang?: string;
   transcribe_error?: string; // the file was saved; transcription can be retried
   translate_error?: string; // the transcript was saved; translation can be retried
   audio_removed?: RemovedAudio[]; // older audio removed to stay within the storage allowance
@@ -628,6 +633,7 @@ export interface TranslateTranscriptResult {
   transcript_id: number;
   language: string | null;
   english: string | null;
+  target_lang: string;
 }
 
 export interface LiveSession {
@@ -679,7 +685,9 @@ export interface MeetingTranslation {
 /** Daily Feed (see server/src/Feed.php). */
 export interface FeedTopic {
   id: number;
-  topic: string;
+  topic: string; // as typed
+  topic_en: string; // its name in English and in Chinese (the topic as typed until the AI has named it)
+  topic_zh: string;
   include_zh: number | boolean; // Chinese-language news too
   effective_from: string; // first feed date that includes it
 }
@@ -715,6 +723,7 @@ export interface FeedResponse {
   feeds: Feed[];
   dates: string[];
   topics: FeedTopic[];
+  topic_names: Record<string, { en: string; zh: string }>; // every topic followed, removed ones too
 }
 export interface FeedStatus {
   date: string;
@@ -739,6 +748,7 @@ export interface Recording {
   language: string | null;
   source_text: string | null;
   translated_text: string | null;
+  target_lang: string; // the language translated_text is in
 }
 
 export interface Transcript {
@@ -747,6 +757,7 @@ export interface Transcript {
   language: string;
   source_text: string;
   translated_text: string | null; // null until translated
+  target_lang: string; // the language translated_text is in
   translate_provider: string | null;
   translate_model: string | null;
   created_at: string;
@@ -867,7 +878,8 @@ export function normalizeBaseUrl(url: string): string {
 
 /** `asSelf`: as the Super Admin's own account even while viewing as someone else. */
 async function request<T>(method: string, path: string, body?: unknown, baseUrl = config.baseUrl, asSelf = false): Promise<T> {
-  const headers: Record<string, string> = { Accept: "application/json" };
+  // The server answers its messages (errors, limits) in the app's language.
+  const headers: Record<string, string> = { Accept: "application/json", "Accept-Language": getLang() === "zh" ? "zh-CN" : "en" };
   if (config.token) headers.Authorization = `Bearer ${config.token}`;
   if (config.viewAs && !asSelf) {
     headers["X-View-As"] = String(config.viewAs.userId);
@@ -906,14 +918,14 @@ async function request<T>(method: string, path: string, body?: unknown, baseUrl 
     throw new ApiError(res.status, message);
   }
   if (data === null) {
-    throw new ApiError(res.status, `Unexpected non-JSON response from ${path}. Check the server address.`);
+    throw new ApiError(res.status, t("Unexpected non-JSON response from {path}. Check the server address.", { path }));
   }
   return data as T;
 }
 
 /** A file download (e.g. a recording's audio): its bytes and the server's file name. */
 async function download(path: string): Promise<{ bytes: Uint8Array; name: string }> {
-  const headers: Record<string, string> = {};
+  const headers: Record<string, string> = { "Accept-Language": getLang() === "zh" ? "zh-CN" : "en" };
   if (config.token) headers.Authorization = `Bearer ${config.token}`;
   if (config.viewAs) {
     headers["X-View-As"] = String(config.viewAs.userId);
@@ -1022,6 +1034,8 @@ export const api = {
 
   /** Your own display name; empty clears it. Returns the updated user. */
   updateProfile: (displayName: string) => request<User>("POST", "/auth/profile", { display_name: displayName }),
+  /** Saves the app's language with the account (it follows the person to every device). */
+  setLanguage: (language: Lang) => request<User>("POST", "/auth/profile", { language }),
 
   /** Act in another of your roles on this sign-in; returns the user as that role. */
   setRole: async (role: string) => {
@@ -1169,19 +1183,21 @@ export const api = {
   // Providers are routed on the server (translation: Claude, transcription: OpenAI, light tasks: DeepSeek).
   routing: () => request<AiRouting>("GET", "/ai/routing"),
 
-  translate: (text: string, model?: string) =>
-    request<TranslateResult>("POST", "/ai/translate", { text, ...(model ? { model } : {}) }),
+  /** Text in any language into `target` (the server defaults to the account's language). */
+  translate: (text: string, target: string, model?: string) =>
+    request<TranslateResult>("POST", "/ai/translate", { text, target, ...(model ? { model } : {}) }),
 
   uploadRecording: (
     audio: Blob,
     fileName: string,
-    opts: { title?: string; recordedAt?: string; transcribe?: boolean },
+    opts: { title?: string; recordedAt?: string; transcribe?: boolean; target?: string },
   ) => {
     const form = new FormData();
     form.append("audio", audio, fileName);
     if (opts.title) form.append("title", opts.title);
     if (opts.recordedAt) form.append("recorded_at", opts.recordedAt);
-    if (opts.transcribe) form.append("transcribe", "1"); // also translates non-English speech
+    if (opts.transcribe) form.append("transcribe", "1"); // also translates speech not in the target language
+    if (opts.target) form.append("target", opts.target);
     return request<UploadResult>("POST", "/recordings", form);
   },
 
@@ -1191,12 +1207,13 @@ export const api = {
       ...(recordedAt ? { recorded_at: recordedAt } : {}),
     }),
 
-  liveChunk: (recordingId: number, chunk: { seq: number; startMs: number; wav: Blob }, prompt?: string) => {
+  liveChunk: (recordingId: number, chunk: { seq: number; startMs: number; wav: Blob }, prompt?: string, target?: string) => {
     const form = new FormData();
     form.append("audio", chunk.wav, `chunk-${chunk.seq}.wav`);
     form.append("seq", String(chunk.seq));
     form.append("start_ms", String(chunk.startMs));
     if (prompt) form.append("prompt", prompt);
+    if (target) form.append("target", target);
     return request<LiveChunkResult>("POST", `/live/${recordingId}/chunk`, form);
   },
 
@@ -1217,8 +1234,8 @@ export const api = {
     form.append("start_ms", String(chunk.startMs));
     return request<MeetingChunkResult>("POST", `/meetings/${recordingId}/chunk`, form);
   },
-  meetingTranslate: (recordingId: number, seq?: number) =>
-    request<MeetingTranslation>("POST", `/meetings/${recordingId}/translate`, seq === undefined ? {} : { seq }),
+  meetingTranslate: (recordingId: number, seq: number | undefined, target: string) =>
+    request<MeetingTranslation>("POST", `/meetings/${recordingId}/translate`, seq === undefined ? { target } : { seq, target }),
   meetingSpeakers: (recordingId: number) => request<MeetingSpeaker[]>("GET", `/meetings/${recordingId}/speakers`),
   renameSpeaker: (recordingId: number, label: string, name: string) =>
     request<MeetingSpeaker[]>("POST", `/meetings/${recordingId}/speakers`, { label, name }),
@@ -1232,8 +1249,8 @@ export const api = {
 
   transcribeRecording: (recordingId: number) => request<TranscribeResult>("POST", `/recordings/${recordingId}/transcribe`),
 
-  translateTranscript: (transcriptId: number, model?: string) =>
-    request<TranslateTranscriptResult>("POST", `/transcripts/${transcriptId}/translate`, model ? { model } : {}),
+  translateTranscript: (transcriptId: number, target: string, model?: string) =>
+    request<TranslateTranscriptResult>("POST", `/transcripts/${transcriptId}/translate`, { target, ...(model ? { model } : {}) }),
 
   recordingStorage: () => request<StorageInfo>("GET", "/recordings/storage"),
   /** A recording's audio, to save on this device. */

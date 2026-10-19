@@ -4,6 +4,7 @@ import { Fragment, useEffect, useMemo, useState, type ReactNode } from "react";
 import { ErrorText } from "../../components/common";
 import { api, type PtDriverBus, type PtDrivers, type PtDriverShift } from "../../lib/api";
 import { errorMessage, formatInteger, LOCALE } from "../../lib/format";
+import { t, tn } from "../../lib/i18n";
 
 type View = "drivers" | "models" | "multi" | "shifts" | "energy";
 type Preset = "90" | "180" | "all" | "custom";
@@ -29,10 +30,11 @@ const VIEWS: { id: View; label: string; description: string }[] = [
 /** Within ±5% of the model average counts as average. */
 const BAND = 5;
 
-const km = (v: number | null) => (v === null ? "—" : `${formatInteger(Math.round(v))} km`);
+const km = (v: number | null) => (v === null ? "—" : t("{n} km", { n: formatInteger(Math.round(v)) }));
 const fixed = (v: number | null | undefined, d = 1) => (v === null || v === undefined ? "—" : v.toLocaleString(LOCALE, { maximumFractionDigits: d, minimumFractionDigits: d }));
 const pct = (v: number | null) => (v === null ? "—" : `${v > 0 ? "+" : v < 0 ? "−" : "±"}${fixed(Math.abs(v))}%`);
-const plural = (n: number, one: string, many = `${one}s`) => `${formatInteger(n)} ${n === 1 ? one : many}`;
+// "{n} driver" / "{n} drivers", translated as a whole.
+const plural = (n: number, one: string, many = `${one}s`) => tn(n, `{n} ${one}`, `{n} ${many}`);
 const byId = (a: string, b: string) => Number(a) - Number(b) || a.localeCompare(b);
 const day = (iso: string) => new Date(`${iso}T00:00:00Z`).toLocaleDateString(LOCALE, { day: "numeric", month: "short", year: "2-digit", timeZone: "UTC" });
 const span = (from: string, to: string) => (from === to ? day(from) : `${day(from)} – ${day(to)}`);
@@ -138,7 +140,7 @@ export default function Drivers() {
   }, [data]);
   const current = VIEWS.find((v) => v.id === view) ?? VIEWS[0];
 
-  if (!data) return error ? <ErrorText message={error} /> : <p className="muted">Loading…</p>;
+  if (!data) return error ? <ErrorText message={error} /> : <p className="muted">{t("Loading…")}</p>;
 
   const multi = [...drivers.values()].filter((d) => d.models.size > 1).length;
 
@@ -146,29 +148,29 @@ export default function Drivers() {
     <div className="stack">
       <div className="filters row wrap">
         <label className="field inline">
-          <span>Range</span>
+          <span>{t("Range")}</span>
           <select value={preset} onChange={(e) => choosePreset(e.target.value as Preset)}>
-            <option value="90">Last 90 days of data</option>
-            <option value="180">Last 180 days of data</option>
-            <option value="all">All data</option>
-            <option value="custom">Custom…</option>
+            <option value="90">{t("Last 90 days of data")}</option>
+            <option value="180">{t("Last 180 days of data")}</option>
+            <option value="all">{t("All data")}</option>
+            <option value="custom">{t("Custom…")}</option>
           </select>
         </label>
         {preset === "custom" && (
           <>
             <label className="field inline">
-              <span>From</span>
+              <span>{t("From")}</span>
               <input type="date" value={data.from} min={data.min_date} max={data.to} onChange={(e) => e.target.value && setRange({ from: e.target.value, to: data.to })} />
             </label>
             <label className="field inline">
-              <span>To</span>
+              <span>{t("To")}</span>
               <input type="date" value={data.to} min={data.from} max={data.max_date} onChange={(e) => e.target.value && setRange({ from: data.from, to: e.target.value })} />
             </label>
           </>
         )}
         <label className="field inline">
-          <span>Driver</span>
-          <input type="search" placeholder="Driver ID…" value={query} onChange={(e) => setQuery(e.target.value)} aria-label="Find a driver" />
+          <span>{t("Driver")}</span>
+          <input type="search" placeholder={t("Driver ID…")} value={query} onChange={(e) => setQuery(e.target.value)} aria-label={t("Find a driver")} />
         </label>
       </div>
 
@@ -176,32 +178,32 @@ export default function Drivers() {
 
       <div className="tiles">
         <div className="tile">
-          <span className="tile-label">Drivers</span>
+          <span className="tile-label">{t("Drivers")}</span>
           <span className="tile-value">{formatInteger(drivers.size)}</span>
           <span className="muted small">{span(data.from, data.to)}</span>
         </div>
         <div className="tile">
-          <span className="tile-label">Buses driven</span>
+          <span className="tile-label">{t("Buses driven")}</span>
           <span className="tile-value">{formatInteger(new Set(data.rows.map((r) => r.bus_id)).size)}</span>
           <span className="muted small">{plural(new Set(data.rows.map((r) => r.model)).size, "model")}</span>
         </div>
         <div className="tile">
-          <span className="tile-label">Drive 2+ models</span>
+          <span className="tile-label">{t("Drive 2+ models")}</span>
           <span className="tile-value">{formatInteger(multi)}</span>
-          <span className="muted small">{drivers.size ? `${Math.round((multi / drivers.size) * 100)}% of drivers` : ""}</span>
+          <span className="muted small">{drivers.size ? t("{math}% of drivers", { math: Math.round((multi / drivers.size) * 100) }) : ""}</span>
         </div>
       </div>
 
-      <div className="segmented" role="tablist" aria-label="Driver views">
+      <div className="segmented" role="tablist" aria-label={t("Driver views")}>
         {VIEWS.map((v) => (
           <button key={v.id} role="tab" aria-selected={view === v.id} className={view === v.id ? "on" : ""} onClick={() => setView(v.id)}>
-            {v.label}
+            {t(v.label)}
           </button>
         ))}
       </div>
-      <p className="muted small">{current.description}</p>
+      <p className="muted small">{t(current.description)}</p>
 
-      {shown.length === 0 && <p className="muted">No drivers match.</p>}
+      {shown.length === 0 && <p className="muted">{t("No drivers match.")}</p>}
       {shown.length > 0 && view === "drivers" && <ByDriver drivers={shown} />}
       {shown.length > 0 && view === "models" && <ByModel drivers={shown} modelAvg={modelAvg} />}
       {shown.length > 0 && view === "multi" && <MultiModel drivers={shown} />}
@@ -240,7 +242,7 @@ function ShiftBar({ a, b }: { a: number; b: number }) {
   if (!total) return <span className="muted">—</span>;
   const pa = Math.round((a / total) * 100);
   return (
-    <span className="shift-bar" title={`Shift A ${pa}% · Shift B ${100 - pa}%`}>
+    <span className="shift-bar" title={t("Shift A {pa}% · Shift B {v}%", { pa, v: 100 - pa })}>
       {a > 0 && <span className="shift-a" style={{ flexGrow: a }} />}
       {b > 0 && <span className="shift-b" style={{ flexGrow: b }} />}
     </span>
@@ -251,7 +253,7 @@ function ExpandAll({ all, open, onChange }: { all: string[]; open: Set<string>; 
   const allOpen = all.length > 0 && all.every((k) => open.has(k));
   return (
     <button className="small-btn" onClick={() => onChange(allOpen ? new Set() : new Set(all))}>
-      {allOpen ? "Collapse all" : "Expand all"}
+      {allOpen ? t("Collapse all") : t("Expand all")}
     </button>
   );
 }
@@ -282,14 +284,14 @@ function ByDriver({ drivers }: { drivers: Driver[] }) {
       <table className="data-table drivers-table">
         <thead>
           <tr>
-            {th("id", "Driver")}
-            {th("buses", "Buses", true)}
-            {th("models", "Models", true)}
-            {th("trips", "Trips", true)}
-            {th("days", "Days", true)}
-            {th("km", "Distance", true)}
-            <th>Shift A / B</th>
-            {th("last", "Active")}
+            {th("id", t("Driver"))}
+            {th("buses", t("Buses"), true)}
+            {th("models", t("Models"), true)}
+            {th("trips", t("Trips"), true)}
+            {th("days", t("Days"), true)}
+            {th("km", t("Distance"), true)}
+            <th>{t("Shift A / B")}</th>
+            {th("last", t("Active"))}
           </tr>
         </thead>
         <tbody>
@@ -299,7 +301,7 @@ function ByDriver({ drivers }: { drivers: Driver[] }) {
               <Fragment key={d.id}>
                 <tr className={`clickable${isOpen ? " expanded" : ""}`} onClick={() => setOpen(toggle(open, d.id))}>
                   <td>
-                    <button className="disclosure" aria-expanded={isOpen} aria-label={`Driver ${d.id}: show buses`}>
+                    <button className="disclosure" aria-expanded={isOpen} aria-label={t("Driver {id}: show buses", { id: d.id })}>
                       {isOpen ? "▾" : "▸"}
                     </button>{" "}
                     <span className="mono">{d.id}</span>
@@ -320,14 +322,14 @@ function ByDriver({ drivers }: { drivers: Driver[] }) {
                       <table className="data-table inner-table">
                         <thead>
                           <tr>
-                            <th>Bus</th>
-                            <th>Model</th>
-                            <th className="num">Trips</th>
-                            <th className="num">Days</th>
-                            <th className="num">Distance</th>
-                            <th className="num">Consumption</th>
-                            <th className="num">Shift A / B trips</th>
-                            <th>Dates</th>
+                            <th>{t("Bus")}</th>
+                            <th>{t("Model")}</th>
+                            <th className="num">{t("Trips")}</th>
+                            <th className="num">{t("Days")}</th>
+                            <th className="num">{t("Distance")}</th>
+                            <th className="num">{t("Consumption")}</th>
+                            <th className="num">{t("Shift A / B trips")}</th>
+                            <th>{t("Dates")}</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -339,7 +341,7 @@ function ByDriver({ drivers }: { drivers: Driver[] }) {
                               <td className="num">{formatInteger(b.days)}</td>
                               <td className="num">{km(b.km)}</td>
                               <td className="num">
-                                {fixed(per100(b.energy_used, b.km))} <span className="muted small">{b.unit}/100 km</span>
+                                {fixed(per100(b.energy_used, b.km))} <span className="muted small">{t("{unit}/100 km", { unit: t(b.unit) })}</span>
                               </td>
                               <td className="num">
                                 {formatInteger(b.a_trips)} / {formatInteger(b.b_trips)}
@@ -400,15 +402,12 @@ function ByModel({ drivers, modelAvg }: { drivers: Driver[]; modelAvg: Map<strin
               <span className="disclosure">{isOpen ? "▾" : "▸"}</span>
               <span className="model-name">{m.model}</span>
               <span className="badge">{m.energy}</span>
-              <span className="muted small grow">
-                {plural(list.length, "driver")} · {plural(m.buses.size, "bus", "buses")} · {plural(m.trips, "trip")} · model average{" "}
-                {fixed(modelAvg.get(m.model)?.value)} {m.unit}/100 km
-              </span>
+              <span className="muted small grow">{t("{count} · {size} · {trips} · model average {value} {unit}/100 km", { count: plural(list.length, "driver"), size: plural(m.buses.size, "bus", "buses"), trips: plural(m.trips, "trip"), value: fixed(modelAvg.get(m.model)?.value), unit: t(m.unit) })}</span>
             </button>
             {!isOpen && (
               <p className="driver-chips small">
                 {list.map((d) => (
-                  <span key={d.id} className="chip mono" title={`${plural(d.trips, "trip")} on ${d.buses.map((b) => b.bus_id).join(", ")}`}>
+                  <span key={d.id} className="chip mono" title={t("{trips} on {buses}", { trips: plural(d.trips, "trip"), buses: d.buses.map((b) => b.bus_id).join(", ") })}>
                     {d.id}
                   </span>
                 ))}
@@ -418,11 +417,11 @@ function ByModel({ drivers, modelAvg }: { drivers: Driver[]; modelAvg: Map<strin
               <table className="data-table inner-table">
                 <thead>
                   <tr>
-                    <th>Driver</th>
-                    <th>Buses</th>
-                    <th className="num">Trips</th>
-                    <th className="num">Distance</th>
-                    <th className="num">Consumption</th>
+                    <th>{t("Driver")}</th>
+                    <th>{t("Buses")}</th>
+                    <th className="num">{t("Trips")}</th>
+                    <th className="num">{t("Distance")}</th>
+                    <th className="num">{t("Consumption")}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -439,7 +438,7 @@ function ByModel({ drivers, modelAvg }: { drivers: Driver[]; modelAvg: Map<strin
                       <td className="num">{formatInteger(d.trips)}</td>
                       <td className="num">{km(d.km)}</td>
                       <td className="num">
-                        {fixed(per100(d.energy, d.km))} <span className="muted small">{m.unit}/100 km</span>
+                        {fixed(per100(d.energy, d.km))} <span className="muted small">{t("{unit}/100 km", { unit: t(m.unit) })}</span>
                       </td>
                     </tr>
                   ))}
@@ -462,21 +461,18 @@ function MultiModel({ drivers }: { drivers: Driver[] }) {
   const multi = drivers.filter((d) => d.models.size > 1);
   const both = multi.filter((d) => new Set([...d.models.values()].map((m) => m.energy)).size > 1).length;
   const rows = order(multi, (d, k) => (k === "id" ? Number(d.id) : k === "models" ? d.models.size * 1e6 + d.trips : k === "buses" ? d.buses.length : d.trips));
-  if (!multi.length) return <p className="muted">No driver here has driven more than one bus model.</p>;
+  if (!multi.length) return <p className="muted">{t("No driver here has driven more than one bus model.")}</p>;
   return (
     <div className="stack">
-      <span className="muted small">
-        {plural(multi.length, "driver")} of {formatInteger(drivers.length)} have driven more than one model
-        {both > 0 && `; ${plural(both, "driver")} drove both battery and hydrogen buses`}.
-      </span>
+      <span className="muted small">{t("{count} of {count2} have driven more than one model{v}.", { count: plural(multi.length, "driver"), count2: formatInteger(drivers.length), v: both > 0 && t("; {both} drove both battery and hydrogen buses", { both: plural(both, "driver") }) })}</span>
       <table className="data-table">
         <thead>
           <tr>
-            {th("id", "Driver")}
-            {th("models", "Models", true)}
-            <th>Models driven (trips)</th>
-            {th("buses", "Buses", true)}
-            {th("trips", "Trips", true)}
+            {th("id", t("Driver"))}
+            {th("models", t("Models"), true)}
+            <th>{t("Models driven (trips)")}</th>
+            {th("buses", t("Buses"), true)}
+            {th("trips", t("Trips"), true)}
           </tr>
         </thead>
         <tbody>
@@ -489,11 +485,11 @@ function MultiModel({ drivers }: { drivers: Driver[] }) {
                 <td className="num">{d.models.size}</td>
                 <td>
                   {models.map((m) => (
-                    <span key={m.model} className={`badge ${m.energy === "Hydrogen" ? "badge-energy-h" : "badge-energy-e"}`} title={`Buses ${m.buses.join(", ")}`}>
+                    <span key={m.model} className={`badge ${m.energy === "Hydrogen" ? "badge-energy-h" : "badge-energy-e"}`} title={t("Buses {join}", { join: m.buses.join(", ") })}>
                       {m.model} · {formatInteger(m.trips)}
                     </span>
                   ))}
-                  {mixed && <span className="muted small">battery + hydrogen</span>}
+                  {mixed && <span className="muted small">{t("battery + hydrogen")}</span>}
                 </td>
                 <td className="num">{d.buses.length}</td>
                 <td className="num">{formatInteger(d.trips)}</td>
@@ -522,11 +518,11 @@ function Shifts({ drivers, basis }: { drivers: Driver[]; basis: PtDrivers["shift
   const rows = order(list, (d, k) =>
     k === "id" ? Number(d.id) : k === "share" ? d.shift.a_days / Math.max(1, d.shift.a_days + d.shift.b_days) : d.shift[k],
   );
-  const label: Record<ShiftFilter, string> = { all: "All", a: "Shift A only", b: "Shift B only", both: "Both shifts" };
+  const label: Record<ShiftFilter, string> = { all: t("All"), a: t("Shift A only"), b: t("Shift B only"), both: t("Both shifts") };
   return (
     <div className="stack">
       <div className="row wrap">
-        <div className="segmented" role="group" aria-label="Shift">
+        <div className="segmented" role="group" aria-label={t("Shift")}>
           {(["all", "a", "b", "both"] as ShiftFilter[]).map((f) => (
             <button key={f} className={filter === f ? "on" : ""} aria-pressed={filter === f} onClick={() => setFilter(f)}>
               {label[f]} ({count(f)})
@@ -534,23 +530,20 @@ function Shifts({ drivers, basis }: { drivers: Driver[]; basis: PtDrivers["shift
           ))}
         </div>
         <span className="muted small align-end">
-          <span className="swatch shift-a" aria-hidden /> Shift A (morning) <span className="swatch shift-b" aria-hidden /> Shift B (evening)
+          <span className="swatch shift-a" aria-hidden /> {t("Shift A (morning)")} <span className="swatch shift-b" aria-hidden /> {t("Shift B (evening)")}
         </span>
       </div>
-      <p className="muted small">
-        Bus-days split at a driver handover: {formatInteger(basis.driver_change)} · in half (same driver all day): {formatInteger(basis.halves)} · single trip, by
-        start time: {formatInteger(basis.single)}.
-      </p>
+      <p className="muted small">{t("Bus-days split at a driver handover: {driver_change} · in half (same driver all day): {halves} · single trip, by start time: {single}.", { driver_change: formatInteger(basis.driver_change), halves: formatInteger(basis.halves), single: formatInteger(basis.single) })}</p>
       <table className="data-table">
         <thead>
           <tr>
-            {th("id", "Driver")}
-            <th>Works</th>
-            {th("a_days", "Shift A days", true)}
-            {th("b_days", "Shift B days", true)}
-            {th("share", "A / B split")}
-            {th("a_trips", "Shift A trips", true)}
-            {th("b_trips", "Shift B trips", true)}
+            {th("id", t("Driver"))}
+            <th>{t("Works")}</th>
+            {th("a_days", t("Shift A days"), true)}
+            {th("b_days", t("Shift B days"), true)}
+            {th("share", t("A / B split"))}
+            {th("a_trips", t("Shift A trips"), true)}
+            {th("b_trips", t("Shift B trips"), true)}
           </tr>
         </thead>
         <tbody>
@@ -558,7 +551,7 @@ function Shifts({ drivers, basis }: { drivers: Driver[]; basis: PtDrivers["shift
             const s = d.shift;
             const c = shiftClass(s);
             const share = s.a_days / Math.max(1, s.a_days + s.b_days);
-            const works = c === "a" ? "Shift A" : c === "b" ? "Shift B" : share >= 0.8 ? "Mostly A" : share <= 0.2 ? "Mostly B" : "Both";
+            const works = c === "a" ? t("Shift A") : c === "b" ? t("Shift B") : share >= 0.8 ? t("Mostly A") : share <= 0.2 ? t("Mostly B") : t("Both");
             return (
               <tr key={d.id}>
                 <td className="mono">{d.id}</td>
@@ -608,10 +601,10 @@ interface Perf {
 
 function verdict(diff: number | null) {
   if (diff === null) return null;
-  if (diff <= -BAND) return <span className="badge badge-good">Efficient</span>;
-  if (diff >= 3 * BAND) return <span className="badge badge-serious">Heavy</span>;
-  if (diff >= BAND) return <span className="badge badge-warning">Above average</span>;
-  return <span className="badge badge-info">Average</span>;
+  if (diff <= -BAND) return <span className="badge badge-good">{t("Efficient")}</span>;
+  if (diff >= 3 * BAND) return <span className="badge badge-serious">{t("Heavy")}</span>;
+  if (diff >= BAND) return <span className="badge badge-warning">{t("Above average")}</span>;
+  return <span className="badge badge-info">{t("Average")}</span>;
 }
 
 /** Energy used against what the model averages predict for the same distances (so kWh and kg combine as a ratio). */
@@ -641,8 +634,8 @@ function Consumption({ perf, season }: { perf: Perf[]; season?: Season }) {
     <span className="cons-cell">
       {units.map((u) => (
         <span key={u.unit}>
-          {fixed(u.value)} <span className="muted small">{u.unit}/100 km</span>
-          {u.models > 1 && <span className="muted small"> · {u.models} models</span>}
+          {fixed(u.value)} <span className="muted small">{t("{unit}/100 km", { unit: t(u.unit) })}</span>
+          {u.models > 1 && <span className="muted small">{t("· {models} models", { models: u.models })}</span>}
         </span>
       ))}
     </span>
@@ -701,35 +694,30 @@ function Energy({ drivers, avgs }: { drivers: Driver[]; avgs: SeasonAvgs }) {
   return (
     <div className="stack">
       <div className="filters row wrap">
-        <div className="segmented" role="group" aria-label="Energy type">
+        <div className="segmented" role="group" aria-label={t("Energy type")}>
           {(["all", "Electric", "Hydrogen"] as EnergyFilter[]).map((e) => (
             <button key={e} className={energy === e ? "on" : ""} aria-pressed={energy === e} onClick={() => setEnergy(e)}>
-              {e === "all" ? "All buses" : e === "Electric" ? "Battery" : "Hydrogen"}
+              {e === "all" ? t("All buses") : e === "Electric" ? t("Battery") : t("Hydrogen")}
             </button>
           ))}
         </div>
         <label className="field inline">
-          <span>Count a bus from</span>
+          <span>{t("Count a bus from")}</span>
           <input type="number" min={0} step={50} value={minKm} onChange={(e) => setMinKm(Math.max(0, Number(e.target.value) || 0))} style={{ width: "6em" }} />
-          <span>km per season</span>
+          <span>{t("km per season")}</span>
         </label>
         <ExpandAll all={rows.map((d) => d.id)} open={open} onChange={setOpen} />
       </div>
-      <p className="muted small">
-        Hot season is June–September (Abu Dhabi summer, heavy air-conditioning load). Each season is compared with the same season&apos;s model average, so
-        summer driving isn&apos;t held against anyone. {plural(rated.length, "driver")} rated: {formatInteger(efficient)} efficient (≥{BAND}% below average),{" "}
-        {formatInteger(heavy)} above average (≥{BAND}% over).
-        {unrated > 0 && ` ${plural(unrated, "driver")} with under ${formatInteger(minKm)} km on every bus in both seasons not rated.`} Negative is better.
-      </p>
+      <p className="muted small">{t("Hot season is June–September (Abu Dhabi summer, heavy air-conditioning load). Each season is compared with the same season's model average, so summer driving isn't held against anyone. {count} rated: {efficient} efficient (≥{bAND}% below average), {heavy} above average (≥{bAND2}% over).{v} Negative is better.", { count: plural(rated.length, "driver"), efficient: formatInteger(efficient), bAND: BAND, heavy: formatInteger(heavy), bAND2: BAND, v: unrated > 0 && t(" {unrated} with under {minKm} km on every bus in both seasons not rated.", { unrated: plural(unrated, "driver"), minKm: formatInteger(minKm) }) })}</p>
       <table className="data-table drivers-table">
         <thead>
           <tr>
-            {th("id", "Driver")}
-            {th("km", "Distance counted", true)}
-            <th className="num">Consumption (all their models)</th>
-            {th("hot", "Hot (Jun–Sep) vs model", true)}
-            {th("mild", "Mild (Oct–May) vs model", true)}
-            {th("diff", "Overall", true)}
+            {th("id", t("Driver"))}
+            {th("km", t("Distance counted"), true)}
+            <th className="num">{t("Consumption (all their models)")}</th>
+            {th("hot", t("Hot (Jun–Sep) vs model"), true)}
+            {th("mild", t("Mild (Oct–May) vs model"), true)}
+            {th("diff", t("Overall"), true)}
             <th />
           </tr>
         </thead>
@@ -740,7 +728,7 @@ function Energy({ drivers, avgs }: { drivers: Driver[]; avgs: SeasonAvgs }) {
               <Fragment key={d.id}>
                 <tr className={`clickable${isOpen ? " expanded" : ""}`} onClick={() => setOpen(toggle(open, d.id))}>
                   <td>
-                    <button className="disclosure" aria-expanded={isOpen} aria-label={`Driver ${d.id}: show buses`}>
+                    <button className="disclosure" aria-expanded={isOpen} aria-label={t("Driver {id}: show buses", { id: d.id })}>
                       {isOpen ? "▾" : "▸"}
                     </button>{" "}
                     <span className="mono">{d.id}</span>
@@ -764,21 +752,21 @@ function Energy({ drivers, avgs }: { drivers: Driver[]; avgs: SeasonAvgs }) {
                       <table className="data-table inner-table">
                         <thead>
                           <tr>
-                            <th rowSpan={2}>Bus</th>
-                            <th rowSpan={2}>Model</th>
+                            <th rowSpan={2}>{t("Bus")}</th>
+                            <th rowSpan={2}>{t("Model")}</th>
                             {SEASONS.map((s) => (
                               <th key={s.id} colSpan={4} className="season-head">
-                                {s.label} ({s.months})
+                                {t(s.label)} ({t(s.months)})
                               </th>
                             ))}
                           </tr>
                           <tr>
                             {SEASONS.map((s) => (
                               <Fragment key={s.id}>
-                                <th className="num season-start">Distance</th>
-                                <th className="num">This driver</th>
-                                <th className="num">Model avg</th>
-                                <th className="num">vs model</th>
+                                <th className="num season-start">{t("Distance")}</th>
+                                <th className="num">{t("This driver")}</th>
+                                <th className="num">{t("Model avg")}</th>
+                                <th className="num">{t("vs model")}</th>
                               </Fragment>
                             ))}
                           </tr>
@@ -788,7 +776,7 @@ function Energy({ drivers, avgs }: { drivers: Driver[]; avgs: SeasonAvgs }) {
                             <tr key={p.row.bus_id}>
                               <td className="mono">{p.row.bus_id}</td>
                               <td>
-                                {p.row.model} <span className="muted small">{p.row.unit}/100 km</span>
+                                {p.row.model} <span className="muted small">{t("{unit}/100 km", { unit: t(p.row.unit) })}</span>
                               </td>
                               {SEASONS.map(({ id }) => {
                                 const s = p[id];
@@ -797,7 +785,7 @@ function Energy({ drivers, avgs }: { drivers: Driver[]; avgs: SeasonAvgs }) {
                                   <Fragment key={id}>
                                     <td className={`num season-start${dim}`}>{s.km ? km(s.km) : "—"}</td>
                                     <td className={`num${dim}`}>{fixed(s.value)}</td>
-                                    <td className="num" title={s.bus !== null ? `This bus, all drivers: ${fixed(s.bus)}` : undefined}>
+                                    <td className="num" title={s.bus !== null ? t("This bus, all drivers: {bus}", { bus: fixed(s.bus) }) : undefined}>
                                       {fixed(s.model)}
                                     </td>
                                     <td className={`num${dim}`}>{pct(s.diff)}</td>
@@ -809,8 +797,8 @@ function Energy({ drivers, avgs }: { drivers: Driver[]; avgs: SeasonAvgs }) {
                         </tbody>
                       </table>
                       <p className="muted small season-note">
-                        This driver by season: hot <Consumption perf={d.perf} season="hot" /> · mild <Consumption perf={d.perf} season="mild" />. Greyed figures are
-                        under {formatInteger(minKm)} km and not counted.
+                        {t("This driver by season:")} {t("hot")} <Consumption perf={d.perf} season="hot" /> · {t("mild")} <Consumption perf={d.perf} season="mild" />.{" "}
+                        {t("Greyed figures are under {km} km and not counted.", { km: formatInteger(minKm) })}
                       </p>
                     </td>
                   </tr>

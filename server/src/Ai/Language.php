@@ -44,4 +44,36 @@ final class Language
     {
         return $code === 'en';
     }
+
+    /** The languages text can be translated into: code => name for the AI prompt. */
+    public const TARGETS = [
+        'en' => 'English', 'zh' => 'Simplified Chinese', 'ar' => 'Arabic', 'fr' => 'French', 'de' => 'German',
+        'es' => 'Spanish', 'ru' => 'Russian', 'ja' => 'Japanese', 'ko' => 'Korean', 'hi' => 'Hindi', 'ur' => 'Urdu',
+    ];
+
+    /**
+     * The language to translate into: the one asked for if it's offered, else the account's language (en or zh), else
+     * English.
+     */
+    public static function target(mixed $asked, ?array $user): string
+    {
+        $asked = strtolower(trim((string) $asked));
+        if (isset(self::TARGETS[$asked])) {
+            return $asked;
+        }
+        $own = (string) ($user['language'] ?? 'en');
+        return isset(self::TARGETS[$own]) ? $own : 'en';
+    }
+
+    /** The target's name for prompts ("Simplified Chinese"). */
+    public static function targetName(string $target): string
+    {
+        return self::TARGETS[$target] ?? 'English';
+    }
+
+    /** Is text in $language already in $target ("zh-cn" counts as zh)? Unknown languages never are. */
+    public static function isTarget(?string $language, string $target): bool
+    {
+        return $language !== null && explode('-', strtolower($language))[0] === $target;
+    }
 }

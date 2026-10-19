@@ -4,6 +4,7 @@
 import { useId, useState } from "react";
 import { SOURCE_LABELS as PROVIDER_LABELS, USAGE_SOURCES as PROVIDERS, type UsageSource as Provider } from "../lib/api";
 import { axisMargin, GAP, niceMax, RADIUS, rightRounded, Tooltip, topRounded, useWidth } from "./charts";
+import { t } from "../lib/i18n";
 
 const MAX_BAR = 24;
 
@@ -18,7 +19,7 @@ export interface StackedPoint {
 function Hatch({ id }: { id: string }) {
   return (
     <defs>
-      <pattern id={id} patternUnits="userSpaceOnUse" width="5" height="5" patternTransform="rotate(45)">
+      <pattern id={id} patternUnits="userSpaceOnUse" width="5" height="5" patternTransform={"rotate(45)"}>
         <line x1="0" y1="0" x2="0" y2="5" className="hatch-line" />
       </pattern>
     </defs>
@@ -27,7 +28,7 @@ function Hatch({ id }: { id: string }) {
 
 export function Legend({ providers, inOut = false }: { providers: Provider[]; inOut?: boolean }) {
   return (
-    <ul className="legend" aria-label="Legend">
+    <ul className="legend" aria-label={t("Legend")}>
       {providers.map((p) => (
         <li key={p}>
           <span className={`swatch series-${p}`} aria-hidden />
@@ -39,11 +40,11 @@ export function Legend({ providers, inOut = false }: { providers: Provider[]; in
           {providers.length > 0 && <li className="legend-sep" aria-hidden />}
           <li>
             <span className="swatch swatch-in" aria-hidden />
-            In
+            {t("In")}
           </li>
           <li>
             <span className="swatch swatch-out" aria-hidden />
-            Out
+            {t("Out")}
           </li>
         </>
       )}
@@ -84,7 +85,7 @@ export function StackedColumns({
   return (
     <div className="chart" ref={ref}>
       {width > 0 && (
-        <svg width={width} height={height} role="img" aria-label={paired ? "Input and output tokens over time, stacked by provider" : "Usage over time, stacked by provider"}>
+        <svg width={width} height={height} role="img" aria-label={paired ? t("Input and output tokens over time, stacked by provider") : t("Usage over time, stacked by provider")}>
           {paired && <Hatch id={hatch} />}
           <g transform={`translate(${m.left},${m.top})`}>
             {ticks.map((t) => (
@@ -154,8 +155,8 @@ export function StackedColumns({
             <div className="tooltip-row io tooltip-head">
               <span />
               <span />
-              <span className="num">In</span>
-              <span className="num">Out</span>
+              <span className="num">{t("In")}</span>
+              <span className="num">{t("Out")}</span>
             </div>
           )}
           {PROVIDERS.filter((k) => points[hover].values[k] !== undefined || points[hover].out?.[k] !== undefined).map((k) => (
@@ -168,7 +169,7 @@ export function StackedColumns({
           ))}
           <div className={`tooltip-row total${paired ? " io" : ""}`}>
             <span />
-            <span>Total</span>
+            <span>{t("Total")}</span>
             <span className="num">{format(totals[hover])}</span>
             {paired && <span className="num">{format(outTotals[hover])}</span>}
           </div>
@@ -203,7 +204,7 @@ export function HorizontalBars({ items, format }: { items: BarItem[]; format: (v
   return (
     <div className="chart" ref={ref}>
       {width > 0 && (
-        <svg width={width} height={height} role="img" aria-label={paired ? "Input and output tokens" : "Usage by model"}>
+        <svg width={width} height={height} role="img" aria-label={paired ? t("Input and output tokens") : t("Usage by model")}>
           {paired && <Hatch id={hatch} />}
           <line x1={labelW} x2={labelW} y2={height} className="axis-line" />
           {items.map((it, i) => {
@@ -248,7 +249,7 @@ export function HorizontalBars({ items, format }: { items: BarItem[]; format: (v
           <div className="tooltip-row">
             <span className={`swatch series-${items[hover].provider}`} aria-hidden />
             <span>{PROVIDER_LABELS[items[hover].provider]}</span>
-            <span className="num">{paired ? `${format(items[hover].value)} in · ${format(items[hover].out ?? 0)} out` : format(items[hover].value)}</span>
+            <span className="num">{paired ? t("{value} in · {v} out", { value: format(items[hover].value), v: format(items[hover].out ?? 0) }) : format(items[hover].value)}</span>
           </div>
           {items[hover].detail && <div className="muted small">{items[hover].detail}</div>}
         </Tooltip>

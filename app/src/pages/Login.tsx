@@ -2,6 +2,8 @@ import { useState, type FormEvent } from "react";
 import { api, configureApi, normalizeBaseUrl, type User } from "../lib/api";
 import { errorMessage } from "../lib/format";
 import { saveSettings, setToken, type Settings, DEFAULT_SERVER_URL, LOCAL_SERVER_URL } from "../lib/settings";
+import { t } from "../lib/i18n";
+import LanguageSwitch from "../components/LanguageSwitch";
 
 interface Props {
   settings: Settings;
@@ -18,10 +20,10 @@ export default function Login({ settings, onSignedIn }: Props) {
   const [check, setCheck] = useState<string | null>(null);
 
   async function testConnection() {
-    setCheck("Checking…");
+    setCheck(t("Checking…"));
     try {
       const h = await api.health(normalizeBaseUrl(serverUrl));
-      setCheck(h.ok ? "Server is reachable." : "Server answered, but not OK.");
+      setCheck(h.ok ? t("Server is reachable.") : t("Server answered, but not OK."));
     } catch (e) {
       setCheck(errorMessage(e));
     }
@@ -50,39 +52,42 @@ export default function Login({ settings, onSignedIn }: Props) {
   return (
     <div className="center-screen">
       <form className="card narrow stack" onSubmit={(e) => void submit(e)}>
-        <h1>Sign in to My Assistant</h1>
+        <div className="row space-between wrap">
+          <h1>{t("Sign in to My Assistant")}</h1>
+          <LanguageSwitch />
+        </div>
 
         <label className="field">
-          <span>Server address</span>
+          <span>{t("Server address")}</span>
           <input value={serverUrl} onChange={(e) => setServerUrl(e.target.value)} required spellCheck={false} />
           <small className="muted">
-            Usually {DEFAULT_SERVER_URL}. On the server PC itself: {LOCAL_SERVER_URL}.
+            {t("Usually {url}. On the server PC itself: {local}.", { url: DEFAULT_SERVER_URL, local: LOCAL_SERVER_URL })}
           </small>
         </label>
         <div className="row">
           <button type="button" onClick={() => void testConnection()}>
-            Test connection
+            {t("Test connection")}
           </button>
           {check && <span className="muted small">{check}</span>}
         </div>
 
         <label className="field">
-          <span>Email or username</span>
+          <span>{t("Email or username")}</span>
           <input value={email} onChange={(e) => setEmail(e.target.value)} required autoComplete="username" spellCheck={false} />
         </label>
         <label className="field">
-          <span>Password</span>
+          <span>{t("Password")}</span>
           <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required autoComplete="current-password" />
         </label>
         <label className="field">
-          <span>Device name</span>
+          <span>{t("Device name")}</span>
           <input value={deviceName} onChange={(e) => setDeviceName(e.target.value)} maxLength={100} />
-          <small className="muted">Shown on the server so you can tell your logins apart.</small>
+          <small className="muted">{t("Shown on the server so you can tell your logins apart.")}</small>
         </label>
 
         {error && <p className="error-text" role="alert">{error}</p>}
         <button className="primary" type="submit" disabled={busy}>
-          {busy ? "Signing in…" : "Sign in"}
+          {busy ? t("Signing in…") : t("Sign in")}
         </button>
       </form>
     </div>

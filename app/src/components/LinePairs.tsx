@@ -1,4 +1,4 @@
-// A transcript line by line: each original line with its English underneath. Lines pair one to one when the counts
+// A transcript line by line: each original line with its translation underneath. Lines pair one to one when the counts
 // match; when they don't (the translator split or merged a line somewhere), they're aligned by length, allowing one
 // line to pair with two on the other side (a small version of the Gale-Church alignment used for translations).
 // Single-paragraph texts pair by sentence the same way.

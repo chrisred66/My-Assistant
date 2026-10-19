@@ -4,21 +4,29 @@ import { useState } from "react";
 import { api, type User, type UserRole } from "../lib/api";
 import { errorMessage } from "../lib/format";
 import { ErrorText } from "./common";
+import { t } from "../lib/i18n";
 
 const MODULES: Record<string, string> = { operations: "Operations", maintenance: "Repair & Maintenance", planning: "Fleet, Trials and Charging" };
 
 /** One line on what a role can do. */
 export function roleDescription(id: string): string {
   const [kind, a, b] = id.split(":");
-  if (kind === "super_admin") return "Everything, including Usage and all users.";
-  if (kind === "admin") return "Everything except Usage; manages users below Admin.";
-  if (kind === "general") return a === "paid" ? "Recordings with transcription, Translate and Transcripts." : "Record audio and 10 Translate requests a day.";
-  if (a === "big_man") return "All PT modules, with full rights.";
-  return `${MODULES[b] ?? b}: ${a === "manager" ? "add, edit, close and delete" : "view and add"}. General Tool as Free.`;
+  if (kind === "super_admin") return t("Everything, including Usage and all users.");
+  if (kind === "admin") return t("Manages users below Admin; General Tool as Paid; PT only with a PT role.");
+  if (kind === "general") return a === "paid" ? t("Recordings with transcription, Translate and Transcripts.") : t("Record audio, and translate 300 words a day.");
+  if (a === "big_man") return t("All PT modules, with full rights.");
+  return a === "manager"
+    ? t("{module}: add, edit, close and delete. General Tool as Free.", { module: t(MODULES[b] ?? b) })
+    : t("{module}: view and add. General Tool as Free.", { module: t(MODULES[b] ?? b) });
+}
+
+/** A role's name in the app's language (the server sends it in English, e.g. "General User · Paid"). */
+export function roleLabel(label: string): string {
+  return t(label);
 }
 
 function group(id: string): string {
-  return id.startsWith("pt:") ? "PT Management" : id.startsWith("general:") ? "General User" : "Administration";
+  return id.startsWith("pt:") ? t("PT Management") : id.startsWith("general:") ? t("General User") : t("Administration");
 }
 
 /** After sign-in, before the main window: pick a role. */
@@ -26,7 +34,7 @@ export function RolePicker({
   user,
   onChosen,
   onSignOut,
-  signOutLabel = "Sign out",
+  signOutLabel,
 }: {
   user: User;
   onChosen: (u: User) => void;
@@ -52,10 +60,10 @@ export function RolePicker({
     <div className="center-screen">
       <div className="card role-picker stack">
         <div className="stack-tight">
-          <h1>Choose a role</h1>
+          <h1>{t("Choose a role")}</h1>
           <p className="muted">
-            {user.viewed_by ? `Viewing as ${user.display_name}.` : `Signed in as ${user.display_name}.`} You can switch roles at any time from the
-            sidebar.
+            {user.viewed_by ? t("Viewing as {name}.", { name: user.display_name }) : t("Signed in as {name}.", { name: user.display_name })}{" "}
+            {t("You can switch roles at any time from the menu.")}
           </p>
         </div>
         {groups.map((g) => (
@@ -66,8 +74,8 @@ export function RolePicker({
                 .filter((r) => group(r.id) === g)
                 .map((r) => (
                   <button key={r.id} className="role-card" onClick={() => void choose(r)} disabled={busy !== null}>
-                    <strong>{r.label.replace(/^(PT|General User) · /, "")}</strong>
-                    <span className="muted small">{busy === r.id ? "Opening…" : roleDescription(r.id)}</span>
+                    <strong>{t(r.label.replace(/^(PT|General User) · /, ""))}</strong>
+                    <span className="muted small">{busy === r.id ? t("Opening…") : roleDescription(r.id)}</span>
                   </button>
                 ))}
             </div>
@@ -76,7 +84,7 @@ export function RolePicker({
         <ErrorText message={error} />
         <div>
           <button className="link-btn small" onClick={onSignOut}>
-            {signOutLabel}
+            {signOutLabel ?? t("Sign out")}
           </button>
         </div>
       </div>
@@ -90,7 +98,7 @@ export function RoleSwitcher({ user, onSwitched }: { user: User; onSwitched: (u:
   if (user.roles.length < 2) return null;
   return (
     <label className="role-switcher" title={user.active_role ? roleDescription(user.active_role) : undefined}>
-      <span>Acting as</span>
+      <span>{t("Acting as")}</span>
       <select
         value={user.active_role ?? ""}
         disabled={busy}
@@ -105,7 +113,7 @@ export function RoleSwitcher({ user, onSwitched }: { user: User; onSwitched: (u:
               .filter((r) => group(r.id) === g)
               .map((r) => (
                 <option key={r.id} value={r.id}>
-                  {r.label}
+                  {roleLabel(r.label)}
                 </option>
               ))}
           </optgroup>

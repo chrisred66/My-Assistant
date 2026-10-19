@@ -4,6 +4,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api, type ManagedUser, type User } from "../lib/api";
 import { errorMessage } from "../lib/format";
+import { t } from "../lib/i18n";
 
 export function AccountSwitcher({ user, onSwitched }: { user: User; onSwitched: (u: User) => void }) {
   const [open, setOpen] = useState(false);
@@ -54,8 +55,8 @@ export function AccountSwitcher({ user, onSwitched }: { user: User; onSwitched: 
         className="icon-btn"
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
-        aria-label="View as another account"
-        title="View as another account"
+        aria-label={t("View as another account")}
+        title={t("View as another account")}
       >
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
           <circle cx="9" cy="8" r="3.5" />
@@ -63,21 +64,21 @@ export function AccountSwitcher({ user, onSwitched }: { user: User; onSwitched: 
         </svg>
       </button>
       {open && (
-        <div className="account-menu" role="dialog" aria-label="View as another account">
+        <div className="account-menu" role="dialog" aria-label={t("View as another account")}>
           {user.viewed_by && (
             <button className="account-item back" onClick={() => void choose(null)} disabled={busy}>
-              ← Back to my account <span className="muted small">({user.viewed_by.name})</span>
+              {t("← Back to my account")} <span className="muted small">({user.viewed_by.name})</span>
             </button>
           )}
-          <input type="search" placeholder="Find an account…" value={query} onChange={(e) => setQuery(e.target.value)} autoFocus aria-label="Find an account" />
+          <input type="search" placeholder={t("Find an account…")} value={query} onChange={(e) => setQuery(e.target.value)} autoFocus aria-label={t("Find an account")} />
           {error && <p className="error-text small">{error}</p>}
-          {accounts === null && !error && <p className="muted small">Loading…</p>}
-          {accounts && shown.length === 0 && <p className="muted small">No other accounts.</p>}
+          {accounts === null && !error && <p className="muted small">{t("Loading…")}</p>}
+          {accounts && shown.length === 0 && <p className="muted small">{t("No other accounts.")}</p>}
           <div className="account-list">
             {shown.map((a) => (
               <button key={a.id} className="account-item" onClick={() => void choose(a.id)} disabled={busy}>
                 <strong>{a.display_name}</strong>
-                <span className="muted small">{a.roles.map((r) => r.label).join(" · ") || "No access"}</span>
+                <span className="muted small">{a.roles.map((r) => t(r.label)).join(" · ") || t("No access")}</span>
               </button>
             ))}
           </div>

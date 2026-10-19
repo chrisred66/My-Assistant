@@ -27,6 +27,11 @@ tauri-plugin-http = "2"
 tauri-plugin-store = "2"
 tauri-plugin-notification = "2"
 tauri-plugin-dialog = "2"
+tauri-plugin-process = "2"  # restarting after an update
+
+# Updates are installed by the app itself on the desktop; the phone app gets a "new version" link instead.
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+tauri-plugin-updater = "2"
 
 # Login token goes into Windows Credential Manager; other platforms fall back to the store file.
 [target.'cfg(windows)'.dependencies]

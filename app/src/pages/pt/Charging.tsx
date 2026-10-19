@@ -13,7 +13,7 @@ import {
   type PtStation,
   type User,
 } from "../../lib/api";
-import { errorMessage, formatInteger } from "../../lib/format";
+import { errorMessage, formatDay, formatInteger } from "../../lib/format";
 import {
   adjustBuses,
   adjustLanes,
@@ -40,8 +40,10 @@ import {
   type SessionResult,
 } from "./chargingModel";
 import { track } from "../../lib/activity";
+import { t } from "../../lib/i18n";
 
-const kwh = (v: number) => `${formatInteger(Math.round(v))} kWh`;
+// Energy in kWh ("度" in Chinese, as electricity is usually counted there).
+const kwh = (v: number) => t("{n} kWh", { n: formatInteger(Math.round(v)) });
 
 export default function Charging({ user }: { user: User }) {
   const [stations, setStations] = useState<PtStation[] | null>(null);
@@ -67,12 +69,9 @@ export default function Charging({ user }: { user: User }) {
       {stations && <Simulation stations={stations} canAi={canPt(user, "planning", "manage")} />}
       <details className="card" open={assetsOpen} onToggle={(e) => setAssetsOpen(e.currentTarget.open)}>
         <summary>
-          Charging assets{" "}
+          {t("Charging assets")}{" "}
           {stations && (
-            <span className="muted small">
-              ({stations.length} station(s), {stations.reduce((n, s) => n + s.chargers.length, 0)} charger(s),{" "}
-              {stations.reduce((n, s) => n + s.chargers.reduce((g, c) => g + c.guns.length, 0), 0)} gun(s))
-            </span>
+            <span className="muted small">{t("({count} station(s), {reduce} charger(s), {reduce2} gun(s))", { count: stations.length, reduce: stations.reduce((n, s) => n + s.chargers.length, 0), reduce2: stations.reduce((n, s) => n + s.chargers.reduce((g, c) => g + c.guns.length, 0), 0) })}</span>
           )}
         </summary>
         {stations && <Assets user={user} stations={stations} onChanged={() => void loadAssets()} />}
@@ -104,7 +103,7 @@ function Assets({ user, stations, onChanged }: { user: User; stations: PtStation
   return (
     <div className="stack pt-tables">
       <p className="muted small">
-        A charger's guns share its power: one gun on its own gets the one-gun output; when both are in use each gets the two-gun output.
+        {t("A charger's guns share its power: one gun on its own gets the one-gun output; when both are in use each gets the two-gun output.")}
       </p>
       <ErrorText message={error} />
       {stations.map((s) => (
@@ -114,33 +113,33 @@ function Assets({ user, stations, onChanged }: { user: User; stations: PtStation
             <div className="row">
               {canEdit && (
                 <button className="small-btn" onClick={() => setAdding(adding === s.station_id ? null : s.station_id)}>
-                  {adding === s.station_id ? "Cancel" : "Add charger…"}
+                  {adding === s.station_id ? t("Cancel") : t("Add charger…")}
                 </button>
               )}
               {canRemove && s.chargers.length === 0 && (
                 <button
                   className="small-btn danger"
-                  onClick={() => window.confirm(`Remove the empty station ${s.station_name}?`) && void act(() => api.ptRemoveStation(s.station_id))}
+                  onClick={() => window.confirm(t("Remove the empty station {station_name}?", { station_name: s.station_name })) && void act(() => api.ptRemoveStation(s.station_id))}
                 >
-                  Remove station
+                  {t("Remove station")}
                 </button>
               )}
             </div>
           </div>
           {adding === s.station_id && <AddCharger stationId={s.station_id} onSave={(c) => act(() => api.ptAddCharger(c))} />}
           {s.chargers.length === 0 ? (
-            <p className="muted small">No chargers yet.</p>
+            <p className="muted small">{t("No chargers yet.")}</p>
           ) : (
             <table className="data-table">
               <thead>
                 <tr>
-                  <th>Charger</th>
-                  <th>Location</th>
-                  <th>Type</th>
-                  <th className="num">Guns</th>
-                  <th className="num">Total</th>
-                  <th className="num">One gun</th>
-                  <th className="num">Two guns (each)</th>
+                  <th>{t("Charger")}</th>
+                  <th>{t("Location")}</th>
+                  <th>{t("Type")}</th>
+                  <th className="num">{t("Guns")}</th>
+                  <th className="num">{t("Total")}</th>
+                  <th className="num">{t("One gun")}</th>
+                  <th className="num">{t("Two guns (each)")}</th>
                   {canRemove && <th />}
                 </tr>
               </thead>
@@ -151,18 +150,18 @@ function Assets({ user, stations, onChanged }: { user: User; stations: PtStation
                     <td>{c.location}</td>
                     <td>{c.output_type}</td>
                     <td className="num">{c.guns.length}</td>
-                    <td className="num">{c.charger_output} kW</td>
-                    <td className="num">{c.one_gun_output} kW</td>
-                    <td className="num">{c.guns.length > 1 ? (c.two_gun_output ? `${c.two_gun_output} kW` : "not stated") : "—"}</td>
+                    <td className="num">{t("{charger_output} kW", { charger_output: c.charger_output })}</td>
+                    <td className="num">{t("{one_gun_output} kW", { one_gun_output: c.one_gun_output })}</td>
+                    <td className="num">{c.guns.length > 1 ? (c.two_gun_output ? `${c.two_gun_output} kW` : t("not stated")) : "—"}</td>
                     {canRemove && (
                       <td className="num">
                         <button
                           className="small-btn danger"
                           onClick={() =>
-                            window.confirm(`Remove charger ${c.charger_id} from ${s.station_name}?`) && void act(() => api.ptRemoveCharger(s.station_id, c.charger_id))
+                            window.confirm(t("Remove charger {charger_id} from {station_name}?", { charger_id: c.charger_id, station_name: s.station_name })) && void act(() => api.ptRemoveCharger(s.station_id, c.charger_id))
                           }
                         >
-                          Remove
+                          {t("Remove")}
                         </button>
                       </td>
                     )}
@@ -179,7 +178,7 @@ function Assets({ user, stations, onChanged }: { user: User; stations: PtStation
         ) : (
           <div>
             <button className="small-btn" onClick={() => setAdding("station")}>
-              Add station…
+              {t("Add station…")}
             </button>
           </div>
         ))}
@@ -198,14 +197,14 @@ function AddStation({ onSave, onCancel }: { onSave: (name: string) => Promise<vo
       }}
     >
       <label className="field inline grow">
-        <span>Station name</span>
+        <span>{t("Station name")}</span>
         <input value={name} onChange={(e) => setName(e.target.value)} required />
       </label>
       <button className="primary align-end" type="submit">
-        Add station
+        {t("Add station")}
       </button>
       <button type="button" className="align-end" onClick={onCancel}>
-        Cancel
+        {t("Cancel")}
       </button>
     </form>
   );
@@ -230,22 +229,22 @@ function AddCharger({ stationId, onSave }: { stationId: number; onSave: (c: Para
   return (
     <form className="row wrap" onSubmit={(e) => void submit(e)}>
       <label className="field inline">
-        <span>Charger name / number</span>
+        <span>{t("Charger name / number")}</span>
         <input value={f.charger_id} onChange={set("charger_id")} required />
       </label>
       <label className="field inline grow">
-        <span>Location (optional)</span>
+        <span>{t("Location (optional)")}</span>
         <input value={f.location} onChange={set("location")} />
       </label>
       <label className="field inline">
-        <span>Type</span>
+        <span>{t("Type")}</span>
         <select value={f.output_type} onChange={set("output_type")}>
-          <option>DC</option>
-          <option>AC</option>
+          <option>{t("DC")}</option>
+          <option>{t("AC")}</option>
         </select>
       </label>
       <label className="field inline">
-        <span>Guns</span>
+        <span>{t("Guns")}</span>
         <select value={f.gun_count} onChange={set("gun_count")}>
           {[1, 2, 3, 4].map((n) => (
             <option key={n}>{n}</option>
@@ -253,21 +252,21 @@ function AddCharger({ stationId, onSave }: { stationId: number; onSave: (c: Para
         </select>
       </label>
       <label className="field inline">
-        <span>Total kW</span>
+        <span>{t("Total kW")}</span>
         <input type="number" min="1" value={f.charger_output} onChange={set("charger_output")} required />
       </label>
       <label className="field inline">
-        <span>One gun kW</span>
+        <span>{t("One gun kW")}</span>
         <input type="number" min="1" value={f.one_gun_output} placeholder={f.charger_output} onChange={set("one_gun_output")} />
       </label>
       {Number(f.gun_count) > 1 && (
         <label className="field inline">
-          <span>Two guns kW (each)</span>
+          <span>{t("Two guns kW (each)")}</span>
           <input type="number" min="0" value={f.two_gun_output} onChange={set("two_gun_output")} />
         </label>
       )}
       <button className="primary align-end" type="submit">
-        Add charger
+        {t("Add charger")}
       </button>
     </form>
   );
@@ -348,10 +347,10 @@ function Simulation({ stations, canAi }: { stations: PtStation[]; canAi: boolean
     setAiBusy(true);
     setError(null);
     try {
-      const result = await track("planning", "AI planning", () => api.ptAiSchedule({
+      const result = await track("planning", t("AI planning"), () => api.ptAiSchedule({
         lanes: lanes.map((l) => ({
           key: l.key,
-          label: `${l.stationName} charger ${l.chargerId} gun ${l.gunId}`,
+          label: t("{stationName} charger {chargerId} gun {gunId}", { stationName: l.stationName, chargerId: l.chargerId, gunId: l.gunId }),
           charger: `${l.stationId}/${l.chargerId}`,
           one_gun: l.oneGun,
           two_gun: l.twoGun,
@@ -404,30 +403,30 @@ function Simulation({ stations, canAi }: { stations: PtStation[]; canAi: boolean
     <>
       <div className="card stack">
         <div className="row space-between wrap">
-          <h2>Overnight charging simulation</h2>
+          <h2>{t("Overnight charging simulation")}</h2>
           <div className="row">
             <button className="small-btn" onClick={() => setAdjustOpen((o) => !o)} aria-expanded={adjustOpen}>
-              {adjustOpen ? "Hide parameters" : "Adjust parameters…"}
+              {adjustOpen ? t("Hide parameters") : t("Adjust parameters…")}
             </button>
             {canAi && (
               <button className="small-btn" onClick={() => setAiOpen((o) => !o)} aria-expanded={aiOpen}>
-                {aiOpen ? "Hide AI schedule" : "AI schedule…"}
+                {aiOpen ? t("Hide AI schedule") : t("AI schedule…")}
               </button>
             )}
             <button className="small-btn" onClick={reschedule}>
-              Auto-schedule again
+              {t("Auto-schedule again")}
             </button>
           </div>
         </div>
         <p className="small schedule-source">
-          Schedule:{" "}
-          <strong>{source.kind === "ai" ? `AI (${GOAL_LABELS[aiGoal].toLowerCase()})` : "automatic"}</strong>
-          {edited && " · moved by hand"}
+          {t("Schedule:")}{" "}
+          <strong>{source.kind === "ai" ? t("AI ({goal})", { goal: t(GOAL_LABELS[aiGoal]).toLowerCase() }) : t("automatic")}</strong>
+          {edited && t(" · moved by hand")}
           {source.kind === "ai" && (
             <>
               {" · "}
               <button className="link-btn" onClick={undoAi}>
-                <u>back to the previous schedule</u>
+                <u>{t("back to the previous schedule")}</u>
               </button>
             </>
           )}
@@ -435,28 +434,25 @@ function Simulation({ stations, canAi }: { stations: PtStation[]; canAi: boolean
         {aiOpen && canAi && (
           <div className="adjust-panel stack">
             <p className="muted small">
-              The AI plans for what the simulation shows now: the chosen day or typical day, the selected chargers, reserve, efficiency and any
-              adjusted parameters. It decides which gun each bus uses, the order and any hold-backs; the app then works out the exact times so every
-              session is long enough for the bus's full energy, and loads the result here, where you can still drag sessions and change parameters.
-              Each request is a paid AI call, logged under Usage.
+              {t("The AI plans for what the simulation shows now: the chosen day or typical day, the selected chargers, reserve, efficiency and any adjusted parameters. It decides which gun each bus uses, the order and any hold-backs; the app then works out the exact times so every session is long enough for the bus's full energy, and loads the result here, where you can still drag sessions and change parameters. Each request is a paid AI call, logged under Usage.")}
             </p>
             <div className="row wrap">
               <label className="field inline">
-                <span>Goal</span>
+                <span>{t("Goal")}</span>
                 <select value={aiGoal} onChange={(e) => setAiGoal(e.target.value as PtAiGoal)}>
                   {(Object.keys(GOAL_LABELS) as PtAiGoal[]).map((g) => (
                     <option key={g} value={g}>
-                      {GOAL_LABELS[g]}
+                      {t(GOAL_LABELS[g])}
                     </option>
                   ))}
                 </select>
               </label>
               <label className="field inline grow">
-                <span>Extra instructions (optional)</span>
-                <input value={aiNotes} onChange={(e) => setAiNotes(e.target.value)} maxLength={1000} placeholder="e.g. keep Main Bus Station free after 02:00; bus 3007 first" />
+                <span>{t("Extra instructions (optional)")}</span>
+                <input value={aiNotes} onChange={(e) => setAiNotes(e.target.value)} maxLength={1000} placeholder={t("e.g. keep Main Bus Station free after 02:00; bus 3007 first")} />
               </label>
               <button className="primary align-end" onClick={() => void aiSchedule()} disabled={aiBusy || needs.length === 0 || lanes.length === 0}>
-                {aiBusy ? "Planning…" : "Generate schedule"}
+                {aiBusy ? t("Planning…") : t("Generate schedule")}
               </button>
             </div>
             {source.kind === "ai" && <AiResult source={source} after={totals} edited={edited} />}
@@ -464,16 +460,16 @@ function Simulation({ stations, canAi }: { stations: PtStation[]; canAi: boolean
         )}
         {adjusted && (
           <p className="adjusted-note small">
-            Using adjusted parameters for this simulation only; the saved charger and bus data are unchanged.{" "}
+            {t("Using adjusted parameters for this simulation only; the saved charger and bus data are unchanged.")}{" "}
             <button className="link-btn" onClick={() => setAdjust(NO_ADJUSTMENTS)}>
-              <u>Back to saved values</u>
+              <u>{t("Back to saved values")}</u>
             </button>
           </p>
         )}
         {adjustOpen && <AdjustPanel stations={stations} buses={demand?.buses ?? []} value={adjust} onChange={setAdjust} />}
         <div className="filters row wrap">
           <label className="field inline">
-            <span>Plan for</span>
+            <span>{t("Plan for")}</span>
             <select
               value={basis === "typical" ? "typical" : (demand?.date ?? "")}
               onChange={(e) => {
@@ -484,41 +480,37 @@ function Simulation({ stations, canAi }: { stations: PtStation[]; canAi: boolean
                 }
               }}
             >
-              <option value="typical">Typical day (from recent history)…</option>
-              {basis === "typical" && !dayList.length && <option value="">(loading days…)</option>}
+              <option value="typical">{t("Typical day (from recent history)…")}</option>
+              {basis === "typical" && !dayList.length && <option value="">{t("(loading days…)")}</option>}
               {dayList.map((d) => (
-                <option key={d.date} value={d.date}>
-                  {d.date} · {d.buses} bus(es)
-                </option>
+                <option key={d.date} value={d.date}>{t("{date} · {buses} bus(es)", { date: formatDay(d.date), buses: d.buses })}</option>
               ))}
             </select>
           </label>
           {basis === "typical" && (
             <>
               <label className="field inline">
-                <span>From the last</span>
+                <span>{t("From the last")}</span>
                 <select value={history.days} onChange={(e) => setHistory({ ...history, days: Number(e.target.value) })}>
                   {[14, 30, 60, 90].map((n) => (
-                    <option key={n} value={n}>
-                      {n} days of data
-                    </option>
+                    <option key={n} value={n}>{t("{n} days of data", { n })}</option>
                   ))}
                 </select>
               </label>
               <label className="field inline">
-                <span>Days</span>
+                <span>{t("Days")}</span>
                 <select value={history.weekdays} onChange={(e) => setHistory({ ...history, weekdays: e.target.value as PtHistoryWeekdays })}>
-                  <option value="all">All days</option>
-                  <option value="mon-fri">Mon–Fri</option>
-                  <option value="sat-sun">Sat–Sun</option>
+                  <option value="all">{t("All days")}</option>
+                  <option value="mon-fri">{t("Mon–Fri")}</option>
+                  <option value="sat-sun">{t("Sat–Sun")}</option>
                 </select>
               </label>
               <label className="field inline">
-                <span>Energy per bus</span>
+                <span>{t("Energy per bus")}</span>
                 <select value={history.stat} onChange={(e) => setHistory({ ...history, stat: e.target.value as PtHistoryStat })}>
                   {(Object.keys(STAT_LABELS) as PtHistoryStat[]).map((k) => (
                     <option key={k} value={k}>
-                      {STAT_LABELS[k]}
+                      {t(STAT_LABELS[k])}
                     </option>
                   ))}
                 </select>
@@ -526,65 +518,55 @@ function Simulation({ stations, canAi }: { stations: PtStation[]; canAi: boolean
             </>
           )}
           <label className="field inline">
-            <span>Reserve (kWh)</span>
+            <span>{t("Reserve (kWh)")}</span>
             <input type="number" min="0" step="5" value={reserve} onChange={(e) => setReserve(Number(e.target.value))} />
           </label>
           <label className="field inline">
-            <span>Charging efficiency</span>
+            <span>{t("Charging efficiency")}</span>
             <input type="number" min="0.5" max="1" step="0.01" value={efficiency} onChange={(e) => setEfficiency(Number(e.target.value) || 1)} />
           </label>
           <ChargerPicker lanes={allLanes} enabled={enabled} onChange={setEnabled} />
         </div>
         {basis === "typical" && demand?.basis && (
-          <p className="small">
-            Typical day from {demand.basis.from} to {demand.basis.to}
-            {demand.basis.weekdays !== "all" && ` (${demand.basis.weekdays === "mon-fri" ? "Mon–Fri" : "Sat–Sun"} only)`}: each electric bus that ran,
-            with its {STAT_LABELS[demand.basis.stat]} energy use and its usual last-trip end and first departure.
-          </p>
+          <p className="small">{t("Typical day from {from} to {to}{v}: each electric bus that ran, with its {sTAT_LABELS} energy use and its usual last-trip end and first departure.", { from: formatDay(demand.basis.from), to: formatDay(demand.basis.to), v: demand.basis.weekdays !== "all" && " " + t("({days} only)", { days: demand.basis.weekdays === "mon-fri" ? t("Mon–Fri") : t("Sat–Sun") }), sTAT_LABELS: t(STAT_LABELS[demand.basis.stat]) })}</p>
         )}
-        <p className="muted small">
-          Each bus needs what it used that day plus the reserve, divided by the charging efficiency. Sessions start at least{" "}
-          {adjust.turnaround ?? TURNAROUND} minutes after its last trip. Drag a session to move it (also to another gun), or drag its edges to change
-          its length; times snap to 10 minutes.
-        </p>
+        <p className="muted small">{t("Each bus needs what it used that day plus the reserve, divided by the charging efficiency. Sessions start at least {v} minutes after its last trip. Drag a session to move it (also to another gun), or drag its edges to change its length; times snap to 10 minutes.", { v: adjust.turnaround ?? TURNAROUND })}</p>
         <ErrorText message={error} />
         {demand && (
           <div className="tiles">
             <div className="tile">
-              <span className="tile-label">Buses to charge</span>
+              <span className="tile-label">{t("Buses to charge")}</span>
               <span className="tile-value">{needs.length}</span>
-              {demand.not_charged.length > 0 && <span className="muted small">{demand.not_charged.length} hydrogen bus(es) not included</span>}
+              {demand.not_charged.length > 0 && <span className="muted small">{t("{count} hydrogen bus(es) not included", { count: demand.not_charged.length })}</span>}
             </div>
             <div className="tile">
-              <span className="tile-label">Energy needed</span>
+              <span className="tile-label">{t("Energy needed")}</span>
               <span className="tile-value">{kwh(totals.required)}</span>
             </div>
             <div className="tile">
-              <span className="tile-label">Delivered</span>
+              <span className="tile-label">{t("Delivered")}</span>
               <span className="tile-value">{kwh(totals.delivered)}</span>
               <span className={totals.required - totals.delivered > 0.5 ? "error-text small" : "muted small"}>
-                {totals.required - totals.delivered > 0.5 ? `${kwh(totals.required - totals.delivered)} short` : "everything covered"}
+                {totals.required - totals.delivered > 0.5 ? t("{kwh} short", { kwh: kwh(totals.required - totals.delivered) }) : t("everything covered")}
               </span>
             </div>
             <div className="tile">
-              <span className="tile-label">Buses not fully charged</span>
+              <span className="tile-label">{t("Buses not fully charged")}</span>
               <span className="tile-value">{totals.short}</span>
-              {totals.late > 0 && <span className="error-text small">{totals.late} finish after their first departure</span>}
+              {totals.late > 0 && <span className="error-text small">{t("{late} finish after their first departure", { late: totals.late })}</span>}
             </div>
             <div className="tile">
-              <span className="tile-label">Peak power</span>
-              <span className="tile-value">{formatInteger(totals.peak)} kW</span>
-              {totals.peak > 0 && <span className="muted small">at {clock(totals.peakAt)}</span>}
+              <span className="tile-label">{t("Peak power")}</span>
+              <span className="tile-value">{t("{peak} kW", { peak: formatInteger(totals.peak) })}</span>
+              {totals.peak > 0 && <span className="muted small">{t("at {peakAt}", { peakAt: clock(totals.peakAt) })}</span>}
             </div>
           </div>
         )}
         {unplaced.length > 0 && (
-          <p className="error-text small">
-            No free charger before 19:00 for bus {unplaced.join(", ")}. Enable more chargers or shorten other sessions, then auto-schedule again.
-          </p>
+          <p className="error-text small">{t("No free charger before 19:00 for bus {join}. Enable more chargers or shorten other sessions, then auto-schedule again.", { join: unplaced.join(", ") })}</p>
         )}
         {lanes.length === 0 ? (
-          <p className="muted">No chargers selected.</p>
+          <p className="muted">{t("No chargers selected.")}</p>
         ) : (
           <Timeline
             lanes={lanes}
@@ -599,48 +581,48 @@ function Simulation({ stations, canAi }: { stations: PtStation[]; canAi: boolean
         )}
         <div className="legend small">
           <span>
-            <span className="swatch tl-ok-swatch" aria-hidden /> enough
+            <span className="swatch tl-ok-swatch" aria-hidden /> {t("enough")}
           </span>
           <span>
-            <span className="swatch tl-short-swatch" aria-hidden /> not enough
+            <span className="swatch tl-short-swatch" aria-hidden /> {t("not enough")}
           </span>
           <span>
-            <span className="swatch tl-shared-swatch" aria-hidden /> sharing the charger (two-gun rate)
+            <span className="swatch tl-shared-swatch" aria-hidden /> {t("sharing the charger (two-gun rate)")}
           </span>
           <span>
-            <span className="tl-deadline-key" aria-hidden /> first departure, when charging runs past it
+            <span className="tl-deadline-key" aria-hidden /> {t("first departure, when charging runs past it")}
           </span>
         </div>
       </div>
 
       {sessions.length > 0 && (
         <div className="card stack">
-          <h2>Site power draw (kW)</h2>
+          <h2>{t("Site power draw (kW)")}</h2>
           <LineChart
             points={profilePoints}
-            series={[{ key: "kw", label: "Power", color: "c4" }]}
+            series={[{ key: "kw", label: t("Power"), color: "c4" }]}
             format={(v) => `${formatInteger(v)} kW`}
             formatTick={(v) => formatInteger(v)}
             height={200}
-            label="Total charging power through the night"
+            label={t("Total charging power through the night")}
           />
         </div>
       )}
 
       {demand && needs.length > 0 && (
         <details className="card">
-          <summary>Per-bus schedule ({needs.length} buses)</summary>
+          <summary>{t("Per-bus schedule ({count} buses)", { count: needs.length })}</summary>
           <table className="data-table pt-tables">
             <thead>
               <tr>
-                <th className="num">Bus</th>
-                <th>Model</th>
-                <th>Service</th>
-                <th className="num">Used</th>
-                <th className="num">Needed</th>
-                <th>Charging</th>
-                <th className="num">Delivered</th>
-                <th>Status</th>
+                <th className="num">{t("Bus")}</th>
+                <th>{t("Model")}</th>
+                <th>{t("Service")}</th>
+                <th className="num">{t("Used")}</th>
+                <th className="num">{t("Needed")}</th>
+                <th>{t("Charging")}</th>
+                <th className="num">{t("Delivered")}</th>
+                <th>{t("Status")}</th>
               </tr>
             </thead>
             <tbody>
@@ -653,35 +635,31 @@ function Simulation({ stations, canAi }: { stations: PtStation[]; canAi: boolean
                   <tr key={n.bus.bus_id}>
                     <td className="num mono">{n.bus.bus_id}</td>
                     <td>
-                      {n.bus.model} {n.bus.battery_kwh ? <span className="muted small">({n.bus.battery_kwh} kWh)</span> : null}
+                      {n.bus.model} {n.bus.battery_kwh ? <span className="muted small">{t("({battery_kwh} kWh)", { battery_kwh: n.bus.battery_kwh })}</span> : null}
                     </td>
-                    <td className="nowrap">
-                      {n.bus.first_start?.slice(0, 5)}–{n.bus.last_end?.slice(0, 5)} · {formatInteger(n.bus.distance)} km
-                    </td>
+                    <td className="nowrap">{t("{slice}–{slice2} · {distance} km", { slice: n.bus.first_start?.slice(0, 5), slice2: n.bus.last_end?.slice(0, 5), distance: formatInteger(n.bus.distance) })}</td>
                     <td className="num">{kwh(n.bus.energy_kwh ?? 0)}</td>
                     <td className="num">{kwh(n.requiredKwh)}</td>
                     <td className="nowrap">
                       {s && lane ? (
                         <>
                           {clock(s.start)}–{clock(s.start + s.duration)}
-                          <div className="muted small">
-                            {lane.stationName} · charger {lane.chargerId} gun {lane.gunId}
-                          </div>
+                          <div className="muted small">{t("{stationName} · charger {chargerId} gun {gunId}", { stationName: lane.stationName, chargerId: lane.chargerId, gunId: lane.gunId })}</div>
                         </>
                       ) : (
-                        <span className="muted">not scheduled</span>
+                        <span className="muted">{t("not scheduled")}</span>
                       )}
                     </td>
                     <td className="num">{kwh(r?.deliveredKwh ?? 0)}</td>
                     <td>
                       {!s ? (
-                        <span className="badge badge-critical">no slot</span>
+                        <span className="badge badge-critical">{t("no slot")}</span>
                       ) : ok ? (
-                        <span className="badge badge-good">enough</span>
+                        <span className="badge badge-good">{t("enough")}</span>
                       ) : (
-                        <span className="badge badge-serious">{kwh(n.requiredKwh - (r?.deliveredKwh ?? 0))} short</span>
+                        <span className="badge badge-serious">{t("{kwh} short", { kwh: kwh(n.requiredKwh - (r?.deliveredKwh ?? 0)) })}</span>
                       )}
-                      {r?.late && <span className="badge badge-warning">after first departure</span>}
+                      {r?.late && <span className="badge badge-warning">{t("after first departure")}</span>}
                     </td>
                   </tr>
                 );
@@ -698,25 +676,25 @@ function Simulation({ stations, canAi }: { stations: PtStation[]; canAi: boolean
 function AiResult({ source, after, edited }: { source: Extract<Source, { kind: "ai" }>; after: ScheduleSummary; edited: boolean }) {
   const b = source.before;
   const rows: [string, (s: ScheduleSummary) => string, (s: ScheduleSummary) => number, boolean][] = [
-    ["Delivered", (s) => kwh(s.delivered), (s) => s.delivered, true],
-    ["Short", (s) => kwh(Math.max(0, s.required - s.delivered)), (s) => -(s.required - s.delivered), true],
-    ["Buses not fully charged", (s) => String(s.short), (s) => -s.short, true],
-    ["Finishing after first departure", (s) => String(s.late), (s) => -s.late, true],
-    ["Peak power", (s) => `${formatInteger(s.peak)} kW at ${clock(s.peakAt)}`, (s) => -s.peak, true],
+    [t("Delivered"), (s) => kwh(s.delivered), (s) => s.delivered, true],
+    [t("Short"), (s) => kwh(Math.max(0, s.required - s.delivered)), (s) => -(s.required - s.delivered), true],
+    [t("Buses not fully charged"), (s) => String(s.short), (s) => -s.short, true],
+    [t("Finishing after first departure"), (s) => String(s.late), (s) => -s.late, true],
+    [t("Peak power"), (s) => t("{peak} kW at {peakAt}", { peak: formatInteger(s.peak), peakAt: clock(s.peakAt) }), (s) => -s.peak, true],
   ];
   return (
     <div className="stack-tight">
       {source.result.notes && (
         <p className="small">
-          <strong>AI notes:</strong> {source.result.notes} <span className="muted">(its own summary; the figures below are calculated by the app)</span>
+          <strong>{t("AI notes:")}</strong> {source.result.notes} <span className="muted">{t("(its own summary; the figures below are calculated by the app)")}</span>
         </p>
       )}
       <table className="data-table">
         <thead>
           <tr>
             <th />
-            <th className="num">Previous schedule</th>
-            <th className="num">AI schedule{edited ? " (as edited)" : ""}</th>
+            <th className="num">{t("Previous schedule")}</th>
+            <th className="num">{t("AI schedule{v}", { v: edited ? t(" (as edited)") : "" })}</th>
           </tr>
         </thead>
         <tbody>
@@ -737,7 +715,7 @@ function AiResult({ source, after, edited }: { source: Extract<Source, { kind: "
       </table>
       {source.result.repairs.length > 0 && (
         <details>
-          <summary className="small">The app corrected {source.result.repairs.length} thing(s) in the AI's plan</summary>
+          <summary className="small">{t("The app corrected {count} thing(s) in the AI's plan", { count: source.result.repairs.length })}</summary>
           <ul className="small">
             {source.result.repairs.map((r, i) => (
               <li key={i}>{r}</li>
@@ -745,7 +723,7 @@ function AiResult({ source, after, edited }: { source: Extract<Source, { kind: "
           </ul>
         </details>
       )}
-      <p className="muted small">{formatInteger(source.result.tokens)} tokens (see Usage)</p>
+      <p className="muted small">{t("{tokens} tokens (see Usage)", { tokens: formatInteger(source.result.tokens) })}</p>
     </div>
   );
 }
@@ -787,12 +765,11 @@ function AdjustPanel({
   return (
     <div className="adjust-panel stack">
       <p className="muted small">
-        Try other values without changing the saved data. Leave a field empty to use the saved value (shown in grey). Outputs and intake change what
-        each session delivers straight away; use <strong>Auto-schedule again</strong> to re-plan the sessions around them.
+        {t("Try other values without changing the saved data. Leave a field empty to use the saved value (shown in grey). Outputs and intake change what each session delivers straight away; use “{button}” to re-plan the sessions around them.", { button: t("Auto-schedule again") })}
       </p>
       <div className="row wrap">
         <label className="field inline">
-          <span>Plug-in delay after last trip (min)</span>
+          <span>{t("Plug-in delay after last trip (min)")}</span>
           <input
             type="number"
             min="0"
@@ -803,7 +780,7 @@ function AdjustPanel({
           />
         </label>
         <label className="field inline">
-          <span>Gap between sessions on a gun (min)</span>
+          <span>{t("Gap between sessions on a gun (min)")}</span>
           <input
             type="number"
             min="0"
@@ -819,10 +796,10 @@ function AdjustPanel({
         <table className="data-table">
           <thead>
             <tr>
-              <th>Charger</th>
-              <th className="num">Guns</th>
-              <th>One gun (kW)</th>
-              <th>Each of two guns (kW)</th>
+              <th>{t("Charger")}</th>
+              <th className="num">{t("Guns")}</th>
+              <th>{t("One gun (kW)")}</th>
+              <th>{t("Each of two guns (kW)")}</th>
             </tr>
           </thead>
           <tbody>
@@ -832,9 +809,7 @@ function AdjustPanel({
                 const a = value.chargers[key];
                 return (
                   <tr key={key} className={a ? "adjusted" : undefined}>
-                    <td>
-                      {s.station_name} · charger {c.charger_id}
-                    </td>
+                    <td>{t("{station_name} · charger {charger_id}", { station_name: s.station_name, charger_id: c.charger_id })}</td>
                     <td className="num">{c.guns.length}</td>
                     <td>
                       <input
@@ -843,7 +818,7 @@ function AdjustPanel({
                         placeholder={String(c.one_gun_output)}
                         value={shown(a?.oneGun)}
                         onChange={(e) => setCharger(key, "oneGun", e.target.value)}
-                        aria-label={`One-gun output, ${s.station_name} charger ${c.charger_id}`}
+                        aria-label={t("One-gun output, {station_name} charger {charger_id}", { station_name: s.station_name, charger_id: c.charger_id })}
                       />
                     </td>
                     <td>
@@ -854,7 +829,7 @@ function AdjustPanel({
                           placeholder={String(c.two_gun_output || c.one_gun_output)}
                           value={shown(a?.twoGun)}
                           onChange={(e) => setCharger(key, "twoGun", e.target.value)}
-                          aria-label={`Two-gun output, ${s.station_name} charger ${c.charger_id}`}
+                          aria-label={t("Two-gun output, {station_name} charger {charger_id}", { station_name: s.station_name, charger_id: c.charger_id })}
                         />
                       ) : (
                         <span className="muted">—</span>
@@ -870,20 +845,20 @@ function AdjustPanel({
 
       {buses.length > 0 && (
         <details>
-          <summary className="small">Bus maximum charging intake ({buses.length} buses)</summary>
+          <summary className="small">{t("Bus maximum charging intake ({count} buses)", { count: buses.length })}</summary>
           <p className="muted small">
-            The most power a bus accepts. Empty means the saved value, or no limit when none is stated (the imported models don't state one).
+            {t("The most power a bus accepts. Empty means the saved value, or no limit when none is stated (the imported models don't state one).")}
           </p>
           <div className="intake-grid">
             {buses.map((b) => (
               <label key={b.bus_id} className={`field inline${b.bus_id in value.intake ? " adjusted" : ""}`}>
                 <span>
-                  Bus {b.bus_id} <span className="muted">{b.model}</span>
+                  {t("Bus {bus_id}", { bus_id: b.bus_id })} <span className="muted">{b.model}</span>
                 </span>
                 <input
                   type="number"
                   min="0"
-                  placeholder={b.max_intake_kw ? String(b.max_intake_kw) : "no limit"}
+                  placeholder={b.max_intake_kw ? String(b.max_intake_kw) : t("no limit")}
                   value={b.bus_id in value.intake ? (value.intake[b.bus_id] ?? "") : ""}
                   onChange={(e) => setIntake(b.bus_id, e.target.value, b.max_intake_kw)}
                 />
@@ -895,7 +870,7 @@ function AdjustPanel({
 
       <div className="row">
         <button className="small-btn" onClick={() => onChange(NO_ADJUSTMENTS)} disabled={!isAdjusted(value)}>
-          Back to saved values
+          {t("Back to saved values")}
         </button>
       </div>
     </div>
@@ -912,16 +887,14 @@ function ChargerPicker({ lanes, enabled, onChange }: { lanes: Lane[]; enabled: S
   };
   return (
     <details className="picker">
-      <summary>
-        Chargers: {enabled.size} of {lanes.length} guns
-      </summary>
+      <summary>{t("Chargers: {size} of {count} guns", { size: enabled.size, count: lanes.length })}</summary>
       <div className="picker-panel stack-tight">
         <div className="row">
           <button type="button" className="small-btn" onClick={() => onChange(new Set(lanes.map((l) => l.key)))}>
-            All
+            {t("All")}
           </button>
           <button type="button" className="small-btn" onClick={() => onChange(new Set())}>
-            None
+            {t("None")}
           </button>
         </div>
         {[...byStation.values()].map((ls) => {
@@ -935,7 +908,7 @@ function ChargerPicker({ lanes, enabled, onChange }: { lanes: Lane[]; enabled: S
               {ls.map((l) => (
                 <label key={l.key} className="check indent">
                   <input type="checkbox" checked={enabled.has(l.key)} onChange={(e) => toggle([l.key], e.target.checked)} />
-                  Charger {l.chargerId} · gun {l.gunId} <span className="muted small">({l.oneGun}/{l.twoGun} kW)</span>
+                  {t("Charger {chargerId} · gun {gunId}", { chargerId: l.chargerId, gunId: l.gunId })} <span className="muted small">{t("({oneGun}/{twoGun} kW)", { oneGun: l.oneGun, twoGun: l.twoGun })}</span>
                 </label>
               ))}
             </div>
@@ -1037,9 +1010,7 @@ function Timeline({
             <div key={l.key} className="tl-lane" style={{ height: LANE_H }}>
               <div className="tl-label" style={{ width: LABEL_W }}>
                 <span>{l.stationName}</span>
-                <span className="muted small">
-                  Charger {l.chargerId} · gun {l.gunId}
-                </span>
+                <span className="muted small">{t("Charger {chargerId} · gun {gunId}", { chargerId: l.chargerId, gunId: l.gunId })}</span>
               </div>
               <div className="tl-track" style={{ width: trackW, backgroundSize: `${hourStep * 60 * pxPerMin}px 100%` }}>
                 {sessions
@@ -1050,9 +1021,9 @@ function Timeline({
                     const r = results.get(s.busId);
                     const ok = r && n && r.deliveredKwh >= n.requiredKwh - 0.05;
                     const w = s.duration * pxPerMin;
-                    const title = `Bus ${s.busId}: ${clock(s.start)}–${clock(s.start + s.duration)} (${s.duration} min) · needs ${kwh(n?.requiredKwh ?? 0)}, gets ${kwh(
+                    const title = t("Bus {busId}: {start}–{clock} ({duration} min) · needs {kwh}, gets {kwh2}{v}", { busId: s.busId, start: clock(s.start), clock: clock(s.start + s.duration), duration: s.duration, kwh: kwh(n?.requiredKwh ?? 0), kwh2: kwh(
                       r?.deliveredKwh ?? 0,
-                    )}${r?.late ? " · finishes after its first departure" : ""}`;
+                    ), v: r?.late ? t(" · finishes after its first departure") : "" });
                     return (
                       <div
                         key={s.busId}
@@ -1072,7 +1043,7 @@ function Timeline({
                         <span className="tl-text">
                           <strong>{s.busId}</strong>
                           {w > 90 && ` ${clock(s.start)}–${clock(s.start + s.duration)}`}
-                          {w > 150 && n && ` · ${formatInteger(r?.deliveredKwh ?? 0)}/${formatInteger(n.requiredKwh)} kWh`}
+                          {w > 150 && n && ` · ${t("{delivered}/{required} kWh", { delivered: formatInteger(r?.deliveredKwh ?? 0), required: formatInteger(n.requiredKwh) })}`}
                         </span>
                       </div>
                     );
@@ -1082,7 +1053,7 @@ function Timeline({
                   .map((s) => {
                     const n = needBy.get(s.busId);
                     return results.get(s.busId)?.late && n?.deadline != null ? (
-                      <span key={`d${s.busId}`} className="tl-deadline" style={{ left: n.deadline * pxPerMin }} title={`Bus ${s.busId} first departure ${clock(n.deadline)}`} />
+                      <span key={`d${s.busId}`} className="tl-deadline" style={{ left: n.deadline * pxPerMin }} title={t("Bus {busId} first departure {deadline}", { busId: s.busId, deadline: clock(n.deadline) })} />
                     ) : null;
                   })}
               </div>

@@ -22,6 +22,7 @@ import { claudeCodeEntries, claudeCodeTotals, type InOut } from "./lib/claudeCod
 import { formatCompact, toIsoDate } from "./lib/format";
 import { feedAnnounced, feedToAnnounce, loadPack, loadSkin, petLook, petStays, savePetPosition, setPetEnabled, setPetStays, skinFacing, type LoadedPack, type PetLook, type PetSkin } from "./lib/pet";
 import { getToken, loadSettings } from "./lib/settings";
+import { t } from "./lib/i18n";
 import "./DesktopPet.css";
 
 const POLL_MS = 30_000;
@@ -574,8 +575,8 @@ export default function DesktopPet() {
     >
       {bubble === "usage" && (
         <div className="pet-bubble" onClick={() => setBubble(null)}>
-          <strong>{today ? `${formatCompact(total)} tokens` : "…"}</strong>
-          <span className="pet-sub">of rice eaten today</span>
+          <strong>{today ? t("{n} tokens", { n: formatCompact(total) }) : "…"}</strong>
+          <span className="pet-sub">{t("of rice eaten today")}</span>
           {items.map((p) => (
             <span key={p} className="pet-row">
               <i className={`pet-dot dot-${p}`} />
@@ -587,13 +588,13 @@ export default function DesktopPet() {
               </span>
             </span>
           ))}
-          {current && <span className="pet-sub">Busy: {current.label}</span>}
+          {current && <span className="pet-sub">{t("Busy: {label}", { label: current.label })}</span>}
         </div>
       )}
       {bubble === "news" && (
         <div className="pet-bubble pet-news">
-          <strong>Your Daily Feed is ready</strong>
-          <span className="pet-sub">Today's top stories on your topics</span>
+          <strong>{t("Your Daily Feed is ready")}</strong>
+          <span className="pet-sub">{t("Today's top stories on your topics")}</span>
           <button
             onClick={() => {
               setBubble(null);
@@ -602,16 +603,16 @@ export default function DesktopPet() {
               void focusMain();
             }}
           >
-            Open Daily Feed
+            {t("Open Daily Feed")}
           </button>
         </div>
       )}
       {bubble === "menu" && (
         <div className="pet-bubble pet-menu">
-          <button onClick={() => void toggleStay()}>{stay ? "Swim around" : "Stay here"}</button>
-          <button onClick={() => void focusMain()}>Open My Assistant</button>
-          <button onClick={() => void setPetEnabled(false)}>Put the pet away</button>
-          {shown === "pack" && pack && <span className="pet-sub pet-credit">Animations: {pack.pack.link.replace(/^https:\/\//, "")}</span>}
+          <button onClick={() => void toggleStay()}>{stay ? t("Swim around") : t("Stay here")}</button>
+          <button onClick={() => void focusMain()}>{t("Open My Assistant")}</button>
+          <button onClick={() => void setPetEnabled(false)}>{t("Put the pet away")}</button>
+          {shown === "pack" && pack && <span className="pet-sub pet-credit">{t("Animations: {replace}", { replace: pack.pack.link.replace(/^https:\/\//, "") })}</span>}
         </div>
       )}
       <div
@@ -620,7 +621,7 @@ export default function DesktopPet() {
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onDoubleClick={() => void focusMain()}
-        title={current ? `${current.label}…` : mood === "sleepy" ? "Sleeping" : mood === "hungry" ? "Hungry" : "Click for today's tokens"}
+        title={current ? `${current.label}…` : mood === "sleepy" ? t("Sleeping") : mood === "hungry" ? t("Hungry") : t("Click for today's tokens")}
       >
         {shown === "pack" && pack ? (
           <PackPet pack={pack.pack} base={pack.url} state={packState} activity={current?.kind ?? null} facing={facing} events={events} tierIndex={tierIndex} idleMin={user.idleMs / 60_000} onActing={(a) => (acting.current = a)} />

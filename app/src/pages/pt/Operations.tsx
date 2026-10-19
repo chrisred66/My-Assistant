@@ -16,11 +16,14 @@ import {
   type PtTripOptions,
   type User,
 } from "../../lib/api";
-import { errorMessage, formatInteger, LOCALE } from "../../lib/format";
+import { errorMessage, formatDay, formatInteger, LOCALE } from "../../lib/format";
 import TripTools from "./TripTools";
+import { t, tn } from "../../lib/i18n";
 
 type Preset = "30" | "90" | "all" | "custom";
 /** Consumption by bus and route: the hot season (June–September, Abu Dhabi summer) against the mild season (October–May). */
+/** The season names in the app's language. */
+const seasonSeries = () => SEASON_SERIES.map((s) => ({ ...s, label: t(s.label) })) as typeof SEASON_SERIES;
 const SEASON_SERIES: [{ label: string; color: Color }, { label: string; color: Color }] = [
   { label: "Hot season (Jun–Sep)", color: "c2" },
   { label: "Mild season (Oct–May)", color: "c1" },
@@ -32,7 +35,7 @@ const HYDROGEN: Color = "c2";
 const DISTANCE: Color = "c3";
 const SOC: Color = "c7";
 
-const km = (v: number) => `${formatInteger(Math.round(v))} km`;
+const km = (v: number) => t("{n} km", { n: formatInteger(Math.round(v)) });
 const fixed = (v: number | null | undefined, d = 1) => (v === null || v === undefined ? "—" : v.toLocaleString(LOCALE, { maximumFractionDigits: d, minimumFractionDigits: d }));
 /** Scale top for a consumption line: the 95th percentile (with room for the threshold), so one bad day doesn't flatten it. */
 function robustMax(values: (number | null)[], threshold: number) {
@@ -112,7 +115,7 @@ function trendPoints(daily: PtOperations["daily"], grain: Grain): TrendPoint[] {
       grain === "day"
         ? longDay(k)
         : grain === "week"
-          ? `Week of ${longDay(k)}`
+          ? t("Week of {k}", { k: longDay(k) })
           : new Date(`${k}-01T00:00:00Z`).toLocaleDateString(LOCALE, { month: "long", year: "numeric", timeZone: "UTC" }),
     trips: g.trips,
     distance: g.distance,
@@ -222,19 +225,19 @@ export default function Operations({
   };
 
   if (!options || !filter) {
-    return error ? <ErrorText message={error} /> : <p className="muted">Loading…</p>;
+    return error ? <ErrorText message={error} /> : <p className="muted">{t("Loading…")}</p>;
   }
 
   const electric = data?.by_energy.find((e) => e.energy === "Electric");
   const hydrogen = data?.by_energy.find((e) => e.energy === "Hydrogen");
   const exceptionTotal = data ? Object.entries(data.exceptions).reduce((n, [k, v]) => (k === "low_start_soc" ? n : n + v), 0) : 0;
-  const t = options.thresholds;
+  const thresholds = options.thresholds;
 
   const distancePoints: Point[] = trend.map((p) => ({ label: p.label, title: p.title, values: { distance: p.distance } }));
   const consumptionPoints = (key: "electric" | "hydrogen"): Point[] =>
     trend.map((p) => ({ label: p.label, title: p.title, values: { [key]: p[key], fleet: fleetTrend?.get(p.title)?.[key] ?? null } }));
   const consumptionSeries = (key: "electric" | "hydrogen", label: string, color: Color) =>
-    isTrial && fleetTrend ? [{ key, label: "This trial", color }, { key: "fleet", label: "Fleet average", color: "neutral" as Color }] : [{ key, label, color }];
+    isTrial && fleetTrend ? [{ key, label: t("This trial"), color }, { key: "fleet", label: t("Fleet average"), color: "neutral" as Color }] : [{ key, label: t(label), color }];
 
   // Sorted by the hot season (the higher, A/C-loaded figure), falling back to mild when a bus has no summer trips.
   const busPairs = (energy: string): PairItem[] =>
@@ -243,18 +246,18 @@ export default function Operations({
       .sort((a, b) => (b.consumption_hot ?? b.consumption_mild ?? 0) - (a.consumption_hot ?? a.consumption_mild ?? 0))
       .map((b) => ({
         key: String(b.bus_id),
-        label: `Bus ${b.label}${b.model ? ` · ${b.model}` : ""}`,
+        label: t("Bus {label}", { label: b.label }) + (b.model ? ` · ${b.model}` : ""),
         a: b.consumption_hot,
         b: b.consumption_mild,
-        detail: `All year ${fixed(b.consumption, energy === "Hydrogen" ? 2 : 1)} · ${formatInteger(b.trips)} trips · ${km(b.distance)}`,
+        detail: t("All year {consumption} · {trips} trips · {distance}", { consumption: fixed(b.consumption, energy === "Hydrogen" ? 2 : 1), trips: formatInteger(b.trips), distance: km(b.distance) }),
       }));
 
   const routeBars: BarItem[] = (data?.by_route ?? []).slice(0, 10).map((r) => ({
     key: r.route,
-    label: `Route ${r.route}`,
+    label: t("Route {route}", { route: r.route }),
     value: r.distance,
     color: DISTANCE,
-    detail: `${formatInteger(r.trips)} trips on ${r.buses} bus(es) · avg ${fixed(r.avg_trip_km)} km per trip`,
+    detail: t("{trips} trips on {buses} bus(es) · avg {avg_trip_km} km per trip", { trips: formatInteger(r.trips), buses: r.buses, avg_trip_km: fixed(r.avg_trip_km) }),
   }));
 
   const exceptionBars: BarItem[] = options.issues.map((i) => {
@@ -267,19 +270,17 @@ export default function Operations({
       detail: (
         <>
           <div className="muted">
-            {i.severity === "info" ? "Informational: not counted as an exception" : `${i.severity[0].toUpperCase()}${i.severity.slice(1)}`}
-            {buses.length > 0 && ` · ${buses.length} bus${buses.length === 1 ? "" : "es"}`}
+            {i.severity === "info" ? t("Informational: not counted as an exception") : t(`${i.severity[0].toUpperCase()}${i.severity.slice(1)}`)}
+            {buses.length > 0 && ` · ${tn(buses.length, "{n} bus", "{n} buses")}`}
           </div>
           {buses.slice(0, 10).map((b) => (
             <div key={b.bus_id} className="tooltip-row">
               <span />
-              <span>Bus {b.label}</span>
-              <span className="num">
-                {formatInteger(b.trips)} trip{b.trips === 1 ? "" : "s"}
-              </span>
+              <span>{t("Bus {label}", { label: b.label })}</span>
+              <span className="num">{t("{trips} trip{v}", { trips: formatInteger(b.trips), v: b.trips === 1 ? "" : "s" })}</span>
             </div>
           ))}
-          {buses.length > 10 && <div className="muted">and {buses.length - 10} more</div>}
+          {buses.length > 10 && <div className="muted">{t("and {v} more", { v: buses.length - 10 })}</div>}
         </>
       ),
     };
@@ -291,17 +292,17 @@ export default function Operations({
       .sort((a, b) => (b[`${energy}_hot`] ?? b[`${energy}_mild`] ?? 0) - (a[`${energy}_hot`] ?? a[`${energy}_mild`] ?? 0))
       .map((r) => ({
         key: r.route,
-        label: `Route ${r.route}`,
+        label: t("Route {route}", { route: r.route }),
         a: r[`${energy}_hot`],
         b: r[`${energy}_mild`],
-        detail: `All year ${fixed(r[`${energy}_per_100km`], energy === "hydrogen" ? 2 : 1)} · ${formatInteger(r.trips)} trips on ${r.buses} bus(es) · ${km(r.distance)}`,
+        detail: t("All year {consumption} · {trips} trips on {buses} bus(es) · {distance}", { consumption: fixed(r[`${energy}_per_100km`], energy === "hydrogen" ? 2 : 1), trips: formatInteger(r.trips), buses: r.buses, distance: km(r.distance) }),
       }));
   const electricRoutes = routePairs("electric");
   const hydrogenRoutes = routePairs("hydrogen");
 
   const socPoints: Point[] = (data?.soc_drop_bands ?? []).map((b) => ({
     label: `${b.band}–${b.band + 10}%`,
-    title: `SOC drop ${b.band}–${b.band + 10}%`,
+    title: t("SOC drop {band}–{v}%", { band: b.band, v: b.band + 10 }),
     values: { trips: b.trips },
   }));
 
@@ -309,52 +310,52 @@ export default function Operations({
     <div className="stack">
       <div className="filters row wrap">
         <label className="field inline">
-          <span>Range</span>
+          <span>{t("Range")}</span>
           <select value={preset} onChange={(e) => choosePreset(e.target.value as Preset)}>
-            <option value="30">Last 30 days of data</option>
-            <option value="90">Last 90 days of data</option>
-            <option value="all">All data</option>
-            <option value="custom">Custom…</option>
+            <option value="30">{t("Last 30 days of data")}</option>
+            <option value="90">{t("Last 90 days of data")}</option>
+            <option value="all">{t("All data")}</option>
+            <option value="custom">{t("Custom…")}</option>
           </select>
         </label>
         {preset === "custom" && (
           <>
             <label className="field inline">
-              <span>From</span>
+              <span>{t("From")}</span>
               <input type="date" value={filter.from} max={filter.to} onChange={(e) => e.target.value && setFilter({ ...filter, from: e.target.value })} />
             </label>
             <label className="field inline">
-              <span>To</span>
+              <span>{t("To")}</span>
               <input type="date" value={filter.to} min={filter.from} onChange={(e) => e.target.value && setFilter({ ...filter, to: e.target.value })} />
             </label>
           </>
         )}
         {isTrial && (
           <label className="field inline">
-            <span>Trial</span>
+            <span>{t("Trial")}</span>
             <select value={filter.trial ?? ""} onChange={(e) => setFilter({ ...filter, trial: e.target.value || undefined })}>
-              <option value="">All trials</option>
-              {trials.map((t) => (
-                <option key={t.trial_id} value={t.trial_id}>
-                  {t.trial_name}
-                  {t.bus_label ? ` · ${t.bus_label}` : ""}
+              <option value="">{t("All trials")}</option>
+              {trials.map((trialItem) => (
+                <option key={trialItem.trial_id} value={trialItem.trial_id}>
+                  {trialItem.trial_name}
+                  {trialItem.bus_label ? ` · ${trialItem.bus_label}` : ""}
                 </option>
               ))}
             </select>
           </label>
         )}
         <label className="field inline">
-          <span>Energy</span>
+          <span>{t("Energy")}</span>
           <select value={filter.energy ?? ""} onChange={(e) => setFilter({ ...filter, energy: e.target.value || undefined, bus: undefined })}>
-            <option value="">All</option>
-            <option>Electric</option>
-            <option>Hydrogen</option>
+            <option value="">{t("All")}</option>
+            <option>{t("Electric")}</option>
+            <option>{t("Hydrogen")}</option>
           </select>
         </label>
         <label className="field inline">
-          <span>Bus</span>
+          <span>{t("Bus")}</span>
           <select value={filter.bus ?? ""} onChange={(e) => setFilter({ ...filter, bus: e.target.value || undefined })}>
-            <option value="">All buses</option>
+            <option value="">{t("All buses")}</option>
             {options.buses
               .filter((b) => !filter.energy || b.energy === filter.energy)
               .map((b) => (
@@ -366,17 +367,15 @@ export default function Operations({
           </select>
         </label>
         <label className="field inline">
-          <span>Route</span>
+          <span>{t("Route")}</span>
           <select value={filter.route ?? ""} onChange={(e) => setFilter({ ...filter, route: e.target.value || undefined })}>
-            <option value="">All routes</option>
+            <option value="">{t("All routes")}</option>
             {options.routes.map((r) => (
               <option key={r}>{r}</option>
             ))}
           </select>
         </label>
-        <span className="subtle align-end">
-          Data: {options.min_date ?? "—"} to {options.max_date ?? "—"} · {formatInteger(options.trips)} trips
-        </span>
+        <span className="subtle align-end">{t("Data: {v} to {v2} · {trips} trips", { v: formatDay(options.min_date), v2: formatDay(options.max_date), trips: formatInteger(options.trips) })}</span>
       </div>
 
       <ErrorText message={error} />
@@ -385,64 +384,56 @@ export default function Operations({
         <>
           <div className="tiles">
             <div className="tile">
-              <span className="tile-label">Trips</span>
+              <span className="tile-label">{t("Trips")}</span>
               <span className="tile-value">{formatInteger(data.totals.trips)}</span>
-              <span className="muted small">
-                {data.totals.buses} buses · {data.totals.drivers} drivers · {data.totals.days} days
-              </span>
+              <span className="muted small">{t("{buses} buses · {drivers} drivers · {days} days", { buses: data.totals.buses, drivers: data.totals.drivers, days: data.totals.days })}</span>
             </div>
             <div className="tile">
-              <span className="tile-label">Distance</span>
+              <span className="tile-label">{t("Distance")}</span>
               <span className="tile-value">{km(data.totals.distance)}</span>
-              {data.totals.excluded_trips > 0 && <span className="muted small">{data.totals.excluded_trips} trip(s) with impossible distance left out</span>}
+              {data.totals.excluded_trips > 0 && <span className="muted small">{t("{excluded_trips} trip(s) with impossible distance left out", { excluded_trips: data.totals.excluded_trips })}</span>}
             </div>
             {electric && (
               <div className="tile">
                 <span className="tile-label">
-                  <span className="swatch bg-c1" aria-hidden /> Electric consumption
+                  <span className="swatch bg-c1" aria-hidden /> {t("Electric consumption")}
                 </span>
                 <span className="tile-value">
-                  {fixed(electric.consumption)} <span className="small">kWh/100 km</span>
+                  {fixed(electric.consumption)} <span className="small">{t("kWh/100 km")}</span>
                 </span>
-                <span className="muted small">
-                  {fixed(electric.energy_used, 0)} kWh over {km(electric.distance ?? 0)}
-                </span>
+                <span className="muted small">{t("{energy_used} kWh over {km}", { energy_used: fixed(electric.energy_used, 0), km: km(electric.distance ?? 0) })}</span>
                 <SeasonSplit e={electric} digits={1} />
               </div>
             )}
             {hydrogen && (
               <div className="tile">
                 <span className="tile-label">
-                  <span className="swatch bg-c2" aria-hidden /> Hydrogen consumption
+                  <span className="swatch bg-c2" aria-hidden /> {t("Hydrogen consumption")}
                 </span>
                 <span className="tile-value">
-                  {fixed(hydrogen.consumption, 2)} <span className="small">kg/100 km</span>
+                  {fixed(hydrogen.consumption, 2)} <span className="small">{t("kg/100 km")}</span>
                 </span>
-                <span className="muted small">
-                  {fixed(hydrogen.energy_used, 0)} kg over {km(hydrogen.distance ?? 0)}
-                </span>
+                <span className="muted small">{t("{energy_used} kg over {km}", { energy_used: fixed(hydrogen.energy_used, 0), km: km(hydrogen.distance ?? 0) })}</span>
                 <SeasonSplit e={hydrogen} digits={2} />
               </div>
             )}
             <div className="tile">
-              <span className="tile-label">Exceptions</span>
+              <span className="tile-label">{t("Exceptions")}</span>
               <span className="tile-value">{formatInteger(exceptionTotal)}</span>
-              <span className="muted small">
-                avg SOC drop {fixed(data.totals.avg_soc_drop)}% · lowest end {fixed(data.totals.min_end_soc, 0)}%
-              </span>
+              <span className="muted small">{t("avg SOC drop {avg_soc_drop}% · lowest end {min_end_soc}%", { avg_soc_drop: fixed(data.totals.avg_soc_drop), min_end_soc: fixed(data.totals.min_end_soc, 0) })}</span>
             </div>
           </div>
 
           {data.totals.trips === 0 ? (
-            <p className="muted">No trips match these filters.</p>
+            <p className="muted">{t("No trips match these filters.")}</p>
           ) : (
             <>
               <div className="card stack">
                 <div className="row space-between wrap">
-                  <h2>Trends</h2>
+                  <h2>{t("Trends")}</h2>
                   <div className="row wrap">
                     <label className="field inline">
-                      <span>From</span>
+                      <span>{t("From")}</span>
                       <input
                         type="date"
                         value={shownFrom}
@@ -452,7 +443,7 @@ export default function Operations({
                       />
                     </label>
                     <label className="field inline">
-                      <span>To</span>
+                      <span>{t("To")}</span>
                       <input
                         type="date"
                         value={shownTo}
@@ -462,33 +453,33 @@ export default function Operations({
                       />
                     </label>
                     <div className="field inline">
-                      <span>Group by</span>
-                      <div className="segmented" role="group" aria-label="Time grouping">
+                      <span>{t("Group by")}</span>
+                      <div className="segmented" role="group" aria-label={t("Time grouping")}>
                         {(["auto", "day", "week", "month"] as const).map((g) => (
                           <button key={g} className={grainChoice === g ? "on" : ""} aria-pressed={grainChoice === g} onClick={() => setGrainChoice(g)}>
-                            {g === "auto" ? `Auto (${grain})` : g[0].toUpperCase() + g.slice(1)}
+                            {g === "auto" ? t("Auto ({grain})", { grain: t(grain) }) : t(g[0].toUpperCase() + g.slice(1))}
                           </button>
                         ))}
                       </div>
                     </div>
                     {period && (
                       <button className="small-btn align-end" onClick={() => setPeriod(null)}>
-                        Reset zoom
+                        {t("Reset zoom")}
                       </button>
                     )}
                   </div>
                 </div>
-                <p className="muted small">Drag across any trend chart to zoom in on that period; grouping gets finer automatically.</p>
-                <h3>Distance by {grain}</h3>
+                <p className="muted small">{t("Drag across any trend chart to zoom in on that period; grouping gets finer automatically.")}</p>
+                <h3>{t("Distance by {grain}", { grain: t(grain) })}</h3>
                 {trend.length === 0 ? (
-                  <p className="muted">No trips in this period.</p>
+                  <p className="muted">{t("No trips in this period.")}</p>
                 ) : (
                   <ColumnChart
                     points={distancePoints}
-                    series={[{ key: "distance", label: "Distance", color: DISTANCE }]}
+                    series={[{ key: "distance", label: t("Distance"), color: DISTANCE }]}
                     format={km}
                     formatTick={(v) => formatInteger(v)}
-                    label="Distance over time"
+                    label={t("Distance over time")}
                     onZoom={zoom}
                   />
                 )}
@@ -497,45 +488,44 @@ export default function Operations({
               <div className="chart-grid">
                 {electric && (
                   <div className="card stack">
-                    <h2>Electric consumption (kWh/100 km)</h2>
+                    <h2>{t("Electric consumption (kWh/100 km)")}</h2>
                     <LineChart
                       points={consumptionPoints("electric")}
                       series={consumptionSeries("electric", "Electric", ELECTRIC)}
-                      format={(v) => `${fixed(v)} kWh/100 km`}
+                      format={(v) => `${fixed(v)} ${t("kWh/100 km")}`}
                       formatTick={(v) => formatInteger(v)}
-                      reference={{ value: t.high_kwh_per_100km, label: `high: ${t.high_kwh_per_100km}` }}
-                      maxValue={robustMax(trend.map((p) => p.electric), t.high_kwh_per_100km)}
-                      label="Electric consumption over time"
+                      reference={{ value: thresholds.high_kwh_per_100km, label: t("high: {v}", { v: thresholds.high_kwh_per_100km }) }}
+                      maxValue={robustMax(trend.map((p) => p.electric), thresholds.high_kwh_per_100km)}
+                      label={t("Electric consumption over time")}
                       onZoom={zoom}
                     />
                     {isTrial && fleetTrend && (
-                      <SeriesLegend series={[{ label: "This trial", color: ELECTRIC }, { label: "Fleet average (same days)", color: "neutral" }]} />
+                      <SeriesLegend series={[{ label: t("This trial"), color: ELECTRIC }, { label: t("Fleet average (same days)"), color: "neutral" }]} />
                     )}
                   </div>
                 )}
                 {hydrogen && (
                   <div className="card stack">
-                    <h2>Hydrogen consumption (kg/100 km)</h2>
+                    <h2>{t("Hydrogen consumption (kg/100 km)")}</h2>
                     <LineChart
                       points={consumptionPoints("hydrogen")}
                       series={consumptionSeries("hydrogen", "Hydrogen", HYDROGEN)}
-                      format={(v) => `${fixed(v, 2)} kg/100 km`}
+                      format={(v) => `${fixed(v, 2)} ${t("kg/100 km")}`}
                       formatTick={(v) => fixed(v, 0)}
-                      reference={{ value: t.high_kg_per_100km, label: `high: ${t.high_kg_per_100km}` }}
-                      maxValue={robustMax(trend.map((p) => p.hydrogen), t.high_kg_per_100km)}
-                      label="Hydrogen consumption over time"
+                      reference={{ value: thresholds.high_kg_per_100km, label: t("high: {v}", { v: thresholds.high_kg_per_100km }) }}
+                      maxValue={robustMax(trend.map((p) => p.hydrogen), thresholds.high_kg_per_100km)}
+                      label={t("Hydrogen consumption over time")}
                       onZoom={zoom}
                     />
                     {isTrial && fleetTrend && (
-                      <SeriesLegend series={[{ label: "This trial", color: HYDROGEN }, { label: "Fleet average (same days)", color: "neutral" }]} />
+                      <SeriesLegend series={[{ label: t("This trial"), color: HYDROGEN }, { label: t("Fleet average (same days)"), color: "neutral" }]} />
                     )}
                   </div>
                 )}
               </div>
 
               <p className="muted small">
-                Consumption by bus and by route: hot season (June–September, Abu Dhabi summer, heavy air-conditioning load) against the mild season
-                (October–May), with the summer change on the right.
+                {t("Consumption by bus and by route: hot season (June–September, Abu Dhabi summer, heavy air-conditioning load) against the mild season (October–May), with the summer change on the right.")}
               </p>
               <div className="chart-grid">
                 {(["Electric", "Hydrogen"] as const).map((energy) => {
@@ -543,14 +533,12 @@ export default function Operations({
                   if (!pairs.length) return null;
                   return (
                     <div key={energy} className="card stack">
-                      <h2>
-                        {energy} buses: consumption ({energy === "Hydrogen" ? "kg" : "kWh"}/100 km)
-                      </h2>
+                      <h2>{energy === "Hydrogen" ? t("Hydrogen buses: consumption (kg/100 km)") : t("Electric buses: consumption (kWh/100 km)")}</h2>
                       <PairedBarList
                         items={pairs}
-                        series={SEASON_SERIES}
+                        series={seasonSeries()}
                         format={(v) => fixed(v, energy === "Hydrogen" ? 2 : 1)}
-                        label={`${energy} consumption by bus, hot season against mild season`}
+                        label={energy === "Hydrogen" ? t("Hydrogen consumption by bus, hot season against mild season") : t("Electric consumption by bus, hot season against mild season")}
                       />
                     </div>
                   );
@@ -559,14 +547,12 @@ export default function Operations({
 
               <div className="chart-grid">
                 <div className="card stack">
-                  <h2>Exceptions by type</h2>
-                  <p className="muted small">
-                    High consumption: over {t.high_kwh_per_100km} kWh/100 km (electric) or {t.high_kg_per_100km} kg/100 km (hydrogen). Click a bar to list the trips.
-                  </p>
+                  <h2>{t("Exceptions by type")}</h2>
+                  <p className="muted small">{t("High consumption: over {high_kwh_per_100km} kWh/100 km (electric) or {high_kg_per_100km} kg/100 km (hydrogen). Click a bar to list the trips.", { high_kwh_per_100km: thresholds.high_kwh_per_100km, high_kg_per_100km: thresholds.high_kg_per_100km })}</p>
                   <BarList
                     items={exceptionBars}
                     format={(v) => formatInteger(v)}
-                    label="Trip exceptions by type"
+                    label={t("Trip exceptions by type")}
                     onSelect={(it) => {
                       setIssue(it.key);
                       setTripsOpen(true);
@@ -575,44 +561,44 @@ export default function Operations({
                   />
                   <SeriesLegend
                     series={[
-                      { label: "Data error", color: "critical" },
-                      { label: "Serious", color: "serious" },
-                      { label: "Warning", color: "warning" },
-                      { label: "Info", color: "neutral" },
+                      { label: t("Data error"), color: "critical" },
+                      { label: t("Serious"), color: "serious" },
+                      { label: t("Warning"), color: "warning" },
+                      { label: t("Info"), color: "neutral" },
                     ]}
                   />
                 </div>
                 <div className="card stack">
-                  <h2>SOC drop per trip</h2>
-                  <ColumnChart points={socPoints} series={[{ key: "trips", label: "Trips", color: SOC }]} format={(v) => `${formatInteger(v)} trips`} formatTick={(v) => formatInteger(v)} height={200} label="Distribution of SOC drop per trip" />
+                  <h2>{t("SOC drop per trip")}</h2>
+                  <ColumnChart points={socPoints} series={[{ key: "trips", label: t("Trips"), color: SOC }]} format={(v) => tn(v, "{n} trip", "{n} trips")} formatTick={(v) => formatInteger(v)} height={200} label={t("Distribution of SOC drop per trip")} />
                 </div>
               </div>
 
               <div className="chart-grid">
                 {(electricRoutes.length > 0 || hydrogenRoutes.length > 0) && (
                   <div className="card stack">
-                    <h2>Energy consumption by route</h2>
+                    <h2>{t("Energy consumption by route")}</h2>
                     {electricRoutes.length > 0 && (
                       <>
                         <h3>
-                          Electric (kWh/100 km)
+                          {t("Electric (kWh/100 km)")}
                         </h3>
-                        <PairedBarList items={electricRoutes} series={SEASON_SERIES} format={(v) => fixed(v)} label="Electric consumption by route, hot season against mild season" />
+                        <PairedBarList items={electricRoutes} series={seasonSeries()} format={(v) => fixed(v)} label={t("Electric consumption by route, hot season against mild season")} />
                       </>
                     )}
                     {hydrogenRoutes.length > 0 && (
                       <>
                         <h3>
-                          Hydrogen (kg/100 km)
+                          {t("Hydrogen (kg/100 km)")}
                         </h3>
-                        <PairedBarList items={hydrogenRoutes} series={SEASON_SERIES} format={(v) => fixed(v, 2)} label="Hydrogen consumption by route, hot season against mild season" />
+                        <PairedBarList items={hydrogenRoutes} series={seasonSeries()} format={(v) => fixed(v, 2)} label={t("Hydrogen consumption by route, hot season against mild season")} />
                       </>
                     )}
                   </div>
                 )}
                 <div className="card stack">
-                  <h2>Distance by route{data.by_route.length > 10 ? " (top 10)" : ""}</h2>
-                  <BarList items={routeBars} format={km} label="Distance by route" onSelect={(it) => setFilter({ ...filter, route: it.key === "(none)" ? undefined : it.key })} />
+                  <h2>{t("Distance by route{v}", { v: data.by_route.length > 10 ? t(" (top 10)") : "" })}</h2>
+                  <BarList items={routeBars} format={km} label={t("Distance by route")} onSelect={(it) => setFilter({ ...filter, route: it.key === "(none)" ? undefined : it.key })} />
                 </div>
               </div>
 
@@ -650,36 +636,36 @@ export default function Operations({
 function BusTable({ data }: { data: PtOperations }) {
   return (
     <details className="card">
-      <summary>Per-bus summary ({data.by_bus.length} buses)</summary>
+      <summary>{t("Per-bus summary ({count} buses)", { count: data.by_bus.length })}</summary>
       <table className="data-table pt-tables">
         <thead>
           <tr>
-            <th className="num">Bus</th>
-            <th>Model</th>
-            <th>Energy</th>
-            <th className="num">Trips</th>
-            <th className="num">Days</th>
-            <th className="num">Distance</th>
-            <th className="num">Energy used</th>
-            <th className="num">Per 100 km</th>
-            <th className="num">Avg SOC drop</th>
-            <th className="num">Lowest end SOC</th>
-            <th className="num">Exceptions</th>
+            <th className="num">{t("Bus")}</th>
+            <th>{t("Model")}</th>
+            <th>{t("Energy")}</th>
+            <th className="num">{t("Trips")}</th>
+            <th className="num">{t("Days")}</th>
+            <th className="num">{t("Distance")}</th>
+            <th className="num">{t("Energy used")}</th>
+            <th className="num">{t("Per 100 km")}</th>
+            <th className="num">{t("Avg SOC drop")}</th>
+            <th className="num">{t("Lowest end SOC")}</th>
+            <th className="num">{t("Exceptions")}</th>
           </tr>
         </thead>
         <tbody>
           {data.by_bus.map((b) => (
             <tr key={b.bus_id}>
               <td className="num mono">{b.label}</td>
-              <td>{b.model ?? <span className="muted">not in fleet</span>}</td>
+              <td>{b.model ?? <span className="muted">{t("not in fleet")}</span>}</td>
               <td>
                 <span className={`swatch bg-${energyColor(b.energy)}`} aria-hidden /> {b.energy}
               </td>
               <td className="num">{formatInteger(b.trips)}</td>
               <td className="num">{b.days}</td>
               <td className="num">{km(b.distance)}</td>
-              <td className="num">{b.energy_used === null ? "—" : `${fixed(b.energy_used, 0)} ${b.unit}`}</td>
-              <td className="num">{b.consumption === null ? "—" : `${fixed(b.consumption, b.unit === "kg" ? 2 : 1)} ${b.unit}`}</td>
+              <td className="num">{b.energy_used === null ? "—" : `${fixed(b.energy_used, 0)} ${t(b.unit)}`}</td>
+              <td className="num">{b.consumption === null ? "—" : `${fixed(b.consumption, b.unit === "kg" ? 2 : 1)} ${t(b.unit)}`}</td>
               <td className="num">{fixed(b.avg_soc_drop)}%</td>
               <td className="num">{fixed(b.min_end_soc, 0)}%</td>
               <td className="num">{formatInteger(b.exceptions)}</td>
@@ -733,11 +719,11 @@ function TripList({
 
   const pages = result ? Math.max(1, Math.ceil(result.total / PAGE)) : 1;
 
-  const showing = issue === "" ? "all trips" : issue === "any" ? "trips with exceptions" : (issueInfo.get(issue)?.label.toLowerCase() ?? issue);
+  const showing = issue === "" ? t("all trips") : issue === "any" ? t("trips with exceptions") : (issueInfo.get(issue)?.label.toLowerCase() ?? issue);
   return (
     <details id="pt-trips" className="card" open={open} onToggle={(e) => onToggle(e.currentTarget.open)}>
       <summary>
-        Trips{" "}
+        {t("Trips")}{" "}
         <span className="muted small">
           ({showing}
           {result && open ? `: ${formatInteger(result.total)}` : ""})
@@ -747,13 +733,13 @@ function TripList({
       <div className="row space-between wrap">
         <span />
         <label className="field inline">
-          <span>Show</span>
+          <span>{t("Show")}</span>
           <select value={issue} onChange={(e) => onIssue(e.target.value)}>
-            <option value="">All trips</option>
-            <option value="any">Trips with exceptions</option>
+            <option value="">{t("All trips")}</option>
+            <option value="any">{t("Trips with exceptions")}</option>
             {options.issues.map((i) => (
               <option key={i.code} value={i.code}>
-                {i.label}
+                {t(i.label)}
               </option>
             ))}
           </select>
@@ -762,32 +748,30 @@ function TripList({
       <ErrorText message={error} />
       {result && (
         <>
-          <p className="muted small">
-            {formatInteger(result.total)} trip(s){result.total > PAGE ? ` · page ${page + 1} of ${pages}` : ""}
-          </p>
+          <p className="muted small">{t("{total} trip(s){v}", { total: formatInteger(result.total), v: result.total > PAGE ? t(" · page {v} of {pages}", { v: page + 1, pages }) : "" })}</p>
           {result.rows.length > 0 && (
             <div className="table-scroll">
               <table className="data-table">
                 <thead>
                   <tr>
-                    <th>Date</th>
-                    <th className="num">Bus</th>
-                    <th>Route</th>
-                    <th className="num">Driver</th>
-                    <th>Time</th>
-                    <th className="num">Distance</th>
-                    <th className="num">SOC</th>
-                    <th className="num">Energy</th>
-                    <th className="num">Per 100 km</th>
-                    <th>Issues</th>
+                    <th>{t("Date")}</th>
+                    <th className="num">{t("Bus")}</th>
+                    <th>{t("Route")}</th>
+                    <th className="num">{t("Driver")}</th>
+                    <th>{t("Time")}</th>
+                    <th className="num">{t("Distance")}</th>
+                    <th className="num">{t("SOC")}</th>
+                    <th className="num">{t("Energy")}</th>
+                    <th className="num">{t("Per 100 km")}</th>
+                    <th>{t("Issues")}</th>
                   </tr>
                 </thead>
                 <tbody>
                   {result.rows.map((r) => {
-                    const unit = r.energy === "Hydrogen" ? "kg" : "kWh";
+                    const unit = r.energy === "Hydrogen" ? "kg" : t("kWh");
                     return (
                       <tr key={r.trip_id}>
-                        <td className="nowrap">{r.date}</td>
+                        <td className="nowrap">{formatDay(r.date)}</td>
                         <td className="num mono">{r.bus_label ?? r.bus_id ?? "—"}</td>
                         <td>{r.route ?? "—"}</td>
                         <td className="num mono">{r.driver_id ?? "—"}</td>
@@ -820,10 +804,10 @@ function TripList({
           {pages > 1 && (
             <div className="row">
               <button className="small-btn" disabled={page === 0} onClick={() => setPage((p) => p - 1)}>
-                ← Newer
+                {t("← Newer")}
               </button>
               <button className="small-btn" disabled={page >= pages - 1} onClick={() => setPage((p) => p + 1)}>
-                Older →
+                {t("Older →")}
               </button>
             </div>
           )}
@@ -840,10 +824,10 @@ function SeasonSplit({ e, digits }: { e: PtEnergyTotals; digits: number }) {
   return (
     <span className="season-split small">
       <span className="season-hot">
-        Hot (Jun–Sep) <strong>{fixed(e.consumption_hot, digits)}</strong>
+        {t("Hot (Jun–Sep)")} <strong>{fixed(e.consumption_hot, digits)}</strong>
       </span>
       <span>
-        Mild (Oct–May) <strong>{fixed(e.consumption_mild, digits)}</strong>
+        {t("Mild (Oct–May)")} <strong>{fixed(e.consumption_mild, digits)}</strong>
       </span>
     </span>
   );

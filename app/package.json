@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "release": "node scripts/release-build.mjs"
   },
   "dependencies": {
     "@fontsource-variable/space-grotesk": "^5.3.0",
@@ -16,7 +17,9 @@
     "@tauri-apps/plugin-http": "^2.8.2",
     "@tauri-apps/plugin-notification": "^2.6.0",
     "@tauri-apps/plugin-opener": "^2",
+    "@tauri-apps/plugin-process": "^2.4.0",
     "@tauri-apps/plugin-store": "^2.5.0",
+    "@tauri-apps/plugin-updater": "^2.14.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"
   },

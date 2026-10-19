@@ -4,8 +4,12 @@ import { api, type Transcript, type TranslateResult } from "../lib/api";
 import { TranscriptCard } from "./Transcripts";
 import { errorMessage, formatInteger } from "../lib/format";
 import { track } from "../lib/activity";
+import { t } from "../lib/i18n";
+import TargetPicker from "../components/TargetPicker";
+import { targetName, useTarget } from "../lib/targetLanguage";
 
 export default function Translate() {
+  const [, target] = useTarget("translate");
   const [text, setText] = useState("");
   const [model, setModel] = useState("");
   const [busy, setBusy] = useState(false);
@@ -31,7 +35,7 @@ export default function Translate() {
     setBusy(true);
     setError(null);
     try {
-      setResult(await track("translating", "Translating", () => api.translate(text, model.trim() || undefined)));
+      setResult(await track("translating", t("Translating"), () => api.translate(text, target, model.trim() || undefined)));
       void loadHistory();
     } catch (err) {
       setError(errorMessage(err));
@@ -45,26 +49,25 @@ export default function Translate() {
 
       <form className="stack" onSubmit={(e) => void submit(e)}>
         <label className="field">
-          <span>Arabic text</span>
+          <span>{t("Text in any language (detected automatically)")}</span>
           <textarea
-            className="arabic"
-            dir="rtl"
-            lang="ar"
+            dir="auto"
             rows={8}
             value={text}
             onChange={(e) => setText(e.target.value)}
-            placeholder="اكتب أو الصق النص العربي هنا"
+            placeholder={t("Type or paste the text here")}
             required
           />
         </label>
 
         <div className="row wrap">
+          <TargetPicker purpose="translate" disabled={busy} />
           <label className="field inline grow">
-            <span>Model (optional)</span>
-            <input value={model} onChange={(e) => setModel(e.target.value)} placeholder="Server default" spellCheck={false} />
+            <span>{t("Model (optional)")}</span>
+            <input value={model} onChange={(e) => setModel(e.target.value)} placeholder={t("Server default")} spellCheck={false} />
           </label>
           <button className="primary align-end" type="submit" disabled={busy || !text.trim()}>
-            {busy ? "Translating…" : "Translate"}
+            {busy ? t("Translating…") : t("Translate")}
           </button>
         </div>
       </form>
@@ -74,19 +77,17 @@ export default function Translate() {
       {result && (
         <div className="card stack">
           <div className="row space-between">
-            <h2>English</h2>
+            <h2>{targetName(result.target_lang)}</h2>
             <CopyButton text={result.translation} />
           </div>
           <p className="prose">{result.translation}</p>
-          <p className="muted small">
-            {result.model} · {formatInteger(result.usage.input_tokens)} input / {formatInteger(result.usage.output_tokens)} output tokens
-          </p>
+          <p className="muted small">{t("{model} · {input_tokens} input / {output_tokens} output tokens", { model: result.model, input_tokens: formatInteger(result.usage.input_tokens), output_tokens: formatInteger(result.usage.output_tokens) })}</p>
         </div>
       )}
 
-      <h2>Your translations</h2>
-      {history === null && <p className="muted">Loading…</p>}
-      {history?.length === 0 && <p className="muted">No translations yet.</p>}
+      <h2>{t("Your translations")}</h2>
+      {history === null && <p className="muted">{t("Loading…")}</p>}
+      {history?.length === 0 && <p className="muted">{t("No translations yet.")}</p>}
       <div className="stack">
         {history?.map((t) => (
           <TranscriptCard key={t.id} transcript={t} onChanged={() => void loadHistory()} />

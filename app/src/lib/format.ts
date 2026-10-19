@@ -13,10 +13,22 @@ export function formatDuration(seconds: number | null): string {
 
 // The server sends MySQL DATETIME strings ("2026-10-11 14:05:00") in its own timezone.
 /**
- * Every date, time and number in the app is formatted in English (British style: 15 May 2025, 24-hour clock,
- * 1,234.5), whatever the Windows display language. Use this instead of `undefined` in toLocale…() calls.
+ * The locale every date, time and number is formatted in: the app's language (lib/i18n.ts), not the Windows display
+ * language. English = British style (15 May 2025, 24-hour clock, 1,234.5); Chinese = zh-CN (2025年5月15日).
+ * Use this instead of `undefined` in toLocale…() calls. A live binding: it changes when the language does.
  */
-export const LOCALE = "en-GB";
+export let LOCALE = "en-GB";
+
+export function setLocale(locale: string): void {
+  LOCALE = locale;
+}
+
+/** A "YYYY-MM-DD" date in the app's language: "16 Oct 2026" / "2026年10月16日". Anything else is returned as it is. */
+export function formatDay(value: string | null | undefined): string {
+  if (!value) return "—";
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+  return new Date(`${value}T00:00:00Z`).toLocaleDateString(LOCALE, { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
+}
 
 export function formatDateTime(value: string | null): string {
   if (!value) return "—";
@@ -58,9 +70,9 @@ export function toIsoDate(d: Date): string {
 
 /** "ar" -> "Arabic". Falls back to the raw value for codes Intl doesn't know. */
 export function languageName(code: string | null | undefined): string {
-  if (!code) return "Unknown language";
+  if (!code) return LOCALE.startsWith("zh") ? "未知语言" : "Unknown language";
   try {
-    return new Intl.DisplayNames(["en"], { type: "language" }).of(code) ?? code;
+    return new Intl.DisplayNames([LOCALE], { type: "language" }).of(code) ?? code;
   } catch {
     return code;
   }

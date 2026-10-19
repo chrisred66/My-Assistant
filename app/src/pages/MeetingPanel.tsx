@@ -8,6 +8,9 @@ import { isMobile } from "../lib/platform";
 import { startActivity } from "../lib/activity";
 import { errorMessage, formatDuration, toSqlDateTime } from "../lib/format";
 import { LiveRecorder, outputDevices, type LiveChunk } from "../lib/liveRecorder";
+import { t } from "../lib/i18n";
+import TargetPicker from "../components/TargetPicker";
+import { targetFor } from "../lib/targetLanguage";
 
 type Source = "online" | "in-person";
 type Phase = "idle" | "starting" | "recording" | "finishing";
@@ -89,10 +92,10 @@ export default function MeetingPanel({ onSaved }: { onSaved: (recordingId: numbe
       .then((res) => {
         patch(chunk.seq, { status: "done", turns: res.turns, error: undefined });
         setSpeakers(res.speakers);
-        // English separately, without holding up the next chunk.
+        // The translation separately, without holding up the next chunk.
         if (res.turns.length) {
           void api
-            .meetingTranslate(id, chunk.seq)
+            .meetingTranslate(id, chunk.seq, targetFor("transcribe"))
             .then((t) =>
               patch(chunk.seq, (c) => ({
                 turns: c.turns.map((turn) => {
@@ -149,9 +152,9 @@ export default function MeetingPanel({ onSaved }: { onSaved: (recordingId: numbe
       const message = errorMessage(e);
       setError(
         /Permission|NotAllowed|NotFound|microphone/i.test(message)
-          ? `Microphone unavailable: ${message}. Check Windows Settings → Privacy & security → Microphone.`
+          ? t("Microphone unavailable: {message}. Check Windows Settings → Privacy & security → Microphone.", { message })
           : /system_audio|not found|invoke/i.test(message) && source === "online"
-            ? `The computer's audio can't be captured here (${message}). It works in the desktop app on Windows.`
+            ? t("The computer's audio can't be captured here ({message}). It works in the desktop app on Windows.", { message })
             : message,
       );
       return;
@@ -180,7 +183,7 @@ export default function MeetingPanel({ onSaved }: { onSaved: (recordingId: numbe
       setTitle("");
       onSaved(id, done.audio_removed);
     } catch (e) {
-      setError(`The meeting couldn't be saved: ${errorMessage(e)}`);
+      setError(t("The meeting couldn't be saved: {error}", { error: errorMessage(e) }));
     } finally {
       recorderRef.current = null;
       setPhase("idle");
@@ -194,7 +197,7 @@ export default function MeetingPanel({ onSaved }: { onSaved: (recordingId: numbe
 
   async function rename(s: MeetingSpeaker) {
     const id = meetingRef.current;
-    const name = window.prompt(`Name for ${s.label}`, s.name ?? "");
+    const name = window.prompt(t("Name for {label}", { label: s.label }), s.name ?? "");
     if (id === null || name === null) return;
     try {
       setSpeakers(await api.renameSpeaker(id, s.label, name));
@@ -204,8 +207,8 @@ export default function MeetingPanel({ onSaved }: { onSaved: (recordingId: numbe
   }
 
   useEffect(() => {
-    if (phase === "recording") return startActivity("recording", "Meeting");
-    if (phase === "finishing") return startActivity("saving", "Saving meeting");
+    if (phase === "recording") return startActivity("recording", t("Meeting"));
+    if (phase === "finishing") return startActivity("saving", t("Saving meeting"));
   }, [phase]);
 
   useEffect(
@@ -239,42 +242,41 @@ export default function MeetingPanel({ onSaved }: { onSaved: (recordingId: numbe
   return (
     <div className="card stack meeting">
       <div className="row space-between wrap">
-        <h2>Meeting</h2>
-        <span className="muted small">Live text with speakers · paid plan</span>
+        <h2>{t("Meeting")}</h2>
+        <span className="muted small">{t("Live text with speakers · paid plan")}</span>
       </div>
       <div className="row wrap">
         {!isMobile && (
           <div className="field inline">
-            <span>Meeting</span>
-            <div className="segmented" role="group" aria-label="Meeting type">
+            <span>{t("Meeting")}</span>
+            <div className="segmented" role="group" aria-label={t("Meeting type")}>
               <button className={source === "online" ? "on" : ""} aria-pressed={source === "online"} onClick={() => setSource("online")} disabled={!idle}>
-                Online
+                {t("Online")}
               </button>
               <button className={source === "in-person" ? "on" : ""} aria-pressed={source === "in-person"} onClick={() => setSource("in-person")} disabled={!idle}>
-                In person
+                {t("In person")}
               </button>
             </div>
           </div>
         )}
         <label className="field inline grow">
-          <span>Title</span>
-          <input value={title} onChange={(e) => setTitle(e.target.value)} maxLength={255} placeholder="Optional" disabled={!idle} />
+          <span>{t("Title")}</span>
+          <input value={title} onChange={(e) => setTitle(e.target.value)} maxLength={255} placeholder={t("Optional")} disabled={!idle} />
         </label>
+        <TargetPicker purpose="transcribe" disabled={!idle} />
         {phase === "recording" ? (
-          <button className="danger align-end" onClick={() => void stop()}>
-            ■ End meeting ({formatDuration(elapsed)})
-          </button>
+          <button className="danger align-end" onClick={() => void stop()}>{t("■ End meeting ({elapsed})", { elapsed: formatDuration(elapsed) })}</button>
         ) : (
           <button className="primary align-end" onClick={() => void start()} disabled={!idle}>
-            {phase === "starting" ? "Starting…" : phase === "finishing" ? "Saving…" : "● Start meeting"}
+            {phase === "starting" ? t("Starting…") : phase === "finishing" ? t("Saving…") : t("● Start meeting")}
           </button>
         )}
       </div>
       {source === "online" && devices.length > 0 && (
         <label className="field inline">
-          <span>Meeting audio from</span>
+          <span>{t("Meeting audio from")}</span>
           <select value={devices.some((d) => d.name === device) ? device : ""} onChange={(e) => chooseDevice(e.target.value)} disabled={!idle}>
-            <option value="">Default output ({devices.find((d) => d.default)?.name ?? "system default"})</option>
+            <option value="">{t("Default output ({v})", { v: devices.find((d) => d.default)?.name ?? t("system default") })}</option>
             {devices
               .filter((d) => !d.default)
               .map((d) => (
@@ -286,40 +288,40 @@ export default function MeetingPanel({ onSaved }: { onSaved: (recordingId: numbe
         </label>
       )}
       {source === "online" && devices.length > 0 && (
-        <p className="muted small device-hint">The device your meeting app plays through (headsets often have a separate "Chat" one).</p>
+        <p className="muted small device-hint">{t("The device your meeting app plays through (headsets often have a separate \"Chat\" one).")}</p>
       )}
       {source === "online" ? (
         <label className="check small">
           <input type="checkbox" checked={withMic} onChange={(e) => setWithMic(e.target.checked)} disabled={!idle} />
-          Also record my microphone. Records what this computer plays (the meeting app) — use headphones so the others aren't picked up twice.
+          {t("Also record my microphone. Records what this computer plays (the meeting app) — use headphones so the others aren't picked up twice.")}
         </label>
       ) : (
-        <p className="muted small">Records the microphone. Place the {isMobile ? "phone" : "computer"} where it can hear everyone.</p>
+        <p className="muted small">{t("Records the microphone. Place the {v} where it can hear everyone.", { v: isMobile ? t("phone") : t("computer") })}</p>
       )}
 
       {phase === "recording" && (
         <div className="row">
           <span className="rec-dot" aria-hidden />
-          <div className="meter" role="meter" aria-label="Audio level" aria-valuemin={0} aria-valuemax={1} aria-valuenow={level}>
+          <div className="meter" role="meter" aria-label={t("Audio level")} aria-valuemin={0} aria-valuemax={1} aria-valuenow={level}>
             <div className="meter-fill" style={{ width: `${Math.round(level * 100)}%` }} />
           </div>
-          <span className="muted small">{pending > 0 ? `Transcribing ${pending}…` : "Listening…"}</span>
+          <span className="muted small">{pending > 0 ? t("Transcribing {pending}…", { pending }) : t("Listening…")}</span>
         </div>
       )}
-      {phase === "finishing" && <p className="muted small">{pending > 0 ? `Finishing the last ${pending} part(s), then saving…` : "Saving the meeting…"}</p>}
+      {phase === "finishing" && <p className="muted small">{pending > 0 ? t("Finishing the last {pending} part(s), then saving…", { pending }) : t("Saving the meeting…")}</p>}
       <ErrorText message={error} />
-      {savedId !== null && idle && <p className="small">Saved as recording #{savedId}. Speakers can still be renamed there.</p>}
+      {savedId !== null && idle && <p className="small">{t("Saved as recording #{savedId}. Speakers can still be renamed there.", { savedId })}</p>}
 
       {speakers.length > 0 && (
-        <div className="speaker-chips" aria-label="Speakers">
+        <div className="speaker-chips" aria-label={t("Speakers")}>
           {speakers.map((s) => (
-            <button key={s.label} className="speaker-chip" onClick={() => void rename(s)} title={`Rename ${s.label}`}>
+            <button key={s.label} className="speaker-chip" onClick={() => void rename(s)} title={t("Rename {label}", { label: s.label })}>
               <span className={`swatch bg-c${speakerSlot(s.label)}`} aria-hidden />
               {s.name || s.label}
               {s.name && <span className="muted small"> ({s.label})</span>}
             </button>
           ))}
-          <span className="muted small">Click a speaker to name them.</span>
+          <span className="muted small">{t("Click a speaker to name them.")}</span>
         </div>
       )}
 
@@ -337,15 +339,15 @@ export default function MeetingPanel({ onSaved }: { onSaved: (recordingId: numbe
               {b.texts.some((t) => t.english) && <p className="prose muted">{b.texts.map((t) => t.english ?? t.text).join(" ")}</p>}
             </div>
           ))}
-          {pending > 0 && <div className="meeting-turn muted small">Transcribing…</div>}
+          {pending > 0 && <div className="meeting-turn muted small">{t("Transcribing…")}</div>}
         </div>
       )}
       {failed.map((c) => (
         <div key={c.seq} className="row">
-          <span className="error-text small">Part {c.seq + 1} failed: {c.error}</span>
+          <span className="error-text small">{t("Part {v} failed: {error}", { v: c.seq + 1, error: c.error })}</span>
           {phase !== "finishing" && (
             <button className="small-btn" onClick={() => retry(c.seq)}>
-              Retry
+              {t("Retry")}
             </button>
           )}
         </div>
@@ -364,7 +366,7 @@ export function MeetingSpeakers({ recordingId, onChanged }: { recordingId: numbe
   }, [recordingId]);
 
   async function rename(s: MeetingSpeaker) {
-    const name = window.prompt(`Name for ${s.label}`, s.name ?? "");
+    const name = window.prompt(t("Name for {label}", { label: s.label }), s.name ?? "");
     if (name === null) return;
     try {
       setSpeakers(await api.renameSpeaker(recordingId, s.label, name));
@@ -376,10 +378,10 @@ export function MeetingSpeakers({ recordingId, onChanged }: { recordingId: numbe
 
   if (!speakers?.length && !error) return null;
   return (
-    <div className="speaker-chips" aria-label="Speakers">
-      <span className="muted small">Speakers:</span>
+    <div className="speaker-chips" aria-label={t("Speakers")}>
+      <span className="muted small">{t("Speakers:")}</span>
       {speakers?.map((s) => (
-        <button key={s.label} className="speaker-chip" onClick={() => void rename(s)} title={`Rename ${s.label}`}>
+        <button key={s.label} className="speaker-chip" onClick={() => void rename(s)} title={t("Rename {label}", { label: s.label })}>
           <span className={`swatch bg-c${speakerSlot(s.label)}`} aria-hidden />
           {s.name || s.label}
         </button>

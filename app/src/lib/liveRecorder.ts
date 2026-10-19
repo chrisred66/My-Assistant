@@ -3,6 +3,7 @@
 // Meeting mode can add what the computer is playing (the other people in an online meeting), captured natively
 // (Rust command system_audio_start, WASAPI loopback) and mixed with the microphone; both outputs use the mix.
 import { Channel, invoke } from "@tauri-apps/api/core";
+import { t } from "./i18n";
 
 export interface LiveChunk {
   seq: number; // 0, 1, 2, ... in recording order
@@ -117,7 +118,7 @@ export class LiveRecorder {
   async start(): Promise<void> {
     const useMic = this.opts.mic !== false;
     const useSystem = this.opts.systemAudio === true;
-    if (!useMic && !useSystem) throw new Error("Choose the microphone, the computer's audio, or both");
+    if (!useMic && !useSystem) throw new Error(t("Choose the microphone, the computer's audio, or both"));
     if (useMic) {
       this.stream = await navigator.mediaDevices.getUserMedia({
         audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true },
@@ -141,7 +142,7 @@ export class LiveRecorder {
       URL.revokeObjectURL(url);
     }
     if (useSystem) {
-      if (!worklets) throw new Error("This system can't mix the computer's audio");
+      if (!worklets) throw new Error(t("This system can't mix the computer's audio"));
       const feed = new AudioWorkletNode(this.ctx, "feed", { outputChannelCount: [1] });
       feed.connect(mix);
       const ratio = this.sampleRate / 16000; // the native capture sends 16 kHz

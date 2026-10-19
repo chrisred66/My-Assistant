@@ -18,7 +18,8 @@
                 "minWidth": 720,
                 "minHeight": 520,
                 "label": "main",
-                "additionalBrowserArgs": "--lang=en-GB --disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection"
+                "additionalBrowserArgs": "--lang=en-GB --disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection",
+                "create": false
             },
             {
                 "label": "ball",
@@ -36,7 +37,8 @@
                 "skipTaskbar": true,
                 "visible": false,
                 "focus": false,
-                "additionalBrowserArgs": "--lang=en-GB --disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection"
+                "additionalBrowserArgs": "--lang=en-GB --disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection",
+                "create": false
             },
             {
                 "label": "pet",
@@ -54,7 +56,8 @@
                 "skipTaskbar": true,
                 "visible": false,
                 "focus": false,
-                "additionalBrowserArgs": "--lang=en-GB --disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection"
+                "additionalBrowserArgs": "--lang=en-GB --disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection",
+                "create": false
             }
         ],
         "security": {
@@ -76,6 +79,18 @@
             "icons/128x128@2x.png",
             "icons/icon.icns",
             "icons/icon.ico"
-        ]
+        ],
+        "createUpdaterArtifacts": true
+    },
+    "plugins": {
+        "updater": {
+            "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IENDMzQ5RkVGNjJGN0E4MDEKUldRQnFQZGk3NTgwekp4SkJhWmcvci9rUmpLNkZUNy83c1UrZWxqV1ZaV3c2RWV0YVpaQklyemIK",
+            "endpoints": [
+                "https://github.com/chrisred66/My-Assistant/releases/latest/download/latest.json"
+            ],
+            "windows": {
+                "installMode": "passive"
+            }
+        }
     }
 }

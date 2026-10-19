@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactElement } from "react";
 import { getTheme, onThemeChange, setTheme, type ThemePref } from "../lib/theme";
+import { t } from "../lib/i18n";
 
 const OPTIONS: { id: ThemePref; label: string; icon: ReactElement }[] = [
   {
@@ -38,15 +39,15 @@ export default function ThemeSwitch() {
   const [pref, setPref] = useState<ThemePref>(getTheme);
   useEffect(() => onThemeChange(setPref), []);
   return (
-    <div className="theme-switch" role="radiogroup" aria-label="Theme">
+    <div className="theme-switch" role="radiogroup" aria-label={t("Theme")}>
       {OPTIONS.map((o) => (
         <button
           key={o.id}
           type="button"
           role="radio"
           aria-checked={pref === o.id}
-          aria-label={o.label}
-          title={o.label}
+          aria-label={t(o.label)}
+          title={t(o.label)}
           className={pref === o.id ? "on" : ""}
           onClick={() => {
             setTheme(o.id);

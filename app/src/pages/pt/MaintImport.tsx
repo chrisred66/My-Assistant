@@ -4,8 +4,9 @@
 import { useState } from "react";
 import { ErrorText } from "../../components/common";
 import { api, type PtMaintImport, type PtMaintOptions } from "../../lib/api";
-import { errorMessage, formatInteger } from "../../lib/format";
+import { errorMessage, formatDay, formatInteger } from "../../lib/format";
 import { track } from "../../lib/activity";
+import { t } from "../../lib/i18n";
 
 type ValueMaps = Record<string, Record<string, string | null>>;
 
@@ -34,14 +35,14 @@ export default function MaintImport({
     setBusy(true);
     setError(null);
     try {
-      const r = await track(action === "import" ? "importing" : "uploading", action === "import" ? "WO import" : "Reading file", () =>
+      const r = await track(action === "import" ? "importing" : "uploading", action === "import" ? t("WO import") : t("Reading file"), () =>
         api.ptImportMaint(f, action, opts),
       );
       if (action === "import") {
         setDone(
-          `${r.file}: ${formatInteger(r.inserted ?? 0)} new, ${formatInteger(r.updated ?? 0)} updated, ${formatInteger(r.unchanged ?? 0)} unchanged` +
-            (r.skipped ? `, ${formatInteger(r.skipped)} skipped` : "") +
-            ". The mapping is remembered for files with these columns.",
+          t("{file}: {inserted} new, {updated} updated, {unchanged} unchanged", { file: r.file, inserted: formatInteger(r.inserted ?? 0), updated: formatInteger(r.updated ?? 0), unchanged: formatInteger(r.unchanged ?? 0) }) +
+            (r.skipped ? t(", {skipped} skipped", { skipped: formatInteger(r.skipped) }) : "") +
+            t(". The mapping is remembered for files with these columns."),
         );
         setPreview(null);
         setFile(null);
@@ -63,25 +64,23 @@ export default function MaintImport({
   }
 
   const choices: Record<string, { value: string; label: string }[]> = {
-    type: options.types.map((t) => ({ value: t, label: labels.type[t] ?? t })),
-    status: options.statuses.map((s) => ({ value: s, label: labels.status[s] ?? s })),
+    type: options.types.map((x) => ({ value: x, label: t(labels.type[x] ?? x) })),
+    status: options.statuses.map((s) => ({ value: s, label: t(labels.status[s] ?? s) })),
     priority: options.priorities.map((p) => ({ value: p, label: p })),
     category: options.categories.map((c) => ({ value: c.code, label: c.label })),
     workshop: options.workshops.map((w) => ({ value: w, label: w })),
   };
-  const defaults: Record<string, string> = { type: "Repair", category: "General / other", status: "open, or completed if it has a closing date", priority: "normal", workshop: "not assigned" };
+  const defaults: Record<string, string> = { type: "Repair", category: t("General / other"), status: "open, or completed if it has a closing date", priority: "normal", workshop: t("not assigned") };
 
   return (
     <div className="stack adjust-panel">
-      <strong className="small">Import work orders from an Access export</strong>
+      <strong className="small">{t("Import work orders from an Access export")}</strong>
       <p className="muted small">
-        In Access: External Data → Export → Excel (or Text File). Upload the .xlsx or .csv here. Match its columns to the fields below once; the
-        mapping is remembered for later exports with the same columns. Work orders are matched by their work-order number, so importing a newer
-        export updates them (e.g. adds closing dates and costs) instead of duplicating them.
+        {t("In Access: External Data → Export → Excel (or Text File). Upload the .xlsx or .csv here. Match its columns to the fields below once; the mapping is remembered for later exports with the same columns. Work orders are matched by their work-order number, so importing a newer export updates them (e.g. adds closing dates and costs) instead of duplicating them.")}
       </p>
       <div className="row wrap">
         <label className="file-btn">
-          {file ? file.name : "Choose export…"}
+          {file ? file.name : t("Choose export…")}
           <input
             type="file"
             accept=".xlsx,.csv,.txt"
@@ -95,7 +94,7 @@ export default function MaintImport({
             }}
           />
         </label>
-        {busy && <span className="muted small">Reading…</span>}
+        {busy && <span className="muted small">{t("Reading…")}</span>}
       </div>
       <ErrorText message={error} />
       {done && <p className="small">{done}</p>}
@@ -103,13 +102,13 @@ export default function MaintImport({
       {preview && file && (
         <>
           <p className="small">
-            <strong>{preview.file}</strong>: {formatInteger(preview.total_rows)} rows, {preview.headers.length} columns.{" "}
-            {preview.remembered ? "This layout was imported before; its mapping is filled in." : "New layout: check the guessed mapping below."}
+            <strong>{preview.file}</strong>: {t("{rows} rows, {columns} columns.", { rows: formatInteger(preview.total_rows), columns: preview.headers.length })}{" "}
+            {preview.remembered ? t("This layout was imported before; its mapping is filled in.") : t("New layout: check the guessed mapping below.")}
           </p>
 
           <details open={!preview.remembered || !preview.ready}>
             <summary className="small">
-              <strong>Columns</strong> {preview.ready ? "" : <span className="error-text">— choose the columns marked *</span>}
+              <strong>{t("Columns")}</strong> {preview.ready ? "" : <span className="error-text">{t("— choose the columns marked *")}</span>}
             </summary>
             <div className="map-grid">
               {preview.fields.map((f) => (
@@ -128,7 +127,7 @@ export default function MaintImport({
                       setDirty(true);
                     }}
                   >
-                    <option value="">— not in the file —</option>
+                    <option value="">{t("— not in the file —")}</option>
                     {preview.headers.map((h, i) => (
                       <option key={`${h}${i}`} value={h}>
                         {h || `(column ${i + 1})`}
@@ -139,7 +138,7 @@ export default function MaintImport({
                 </label>
               ))}
               <label className="field inline">
-                <span>Dates are written</span>
+                <span>{t("Dates are written")}</span>
                 <select
                   value={dateOrder}
                   onChange={(e) => {
@@ -147,15 +146,14 @@ export default function MaintImport({
                     setDirty(true);
                   }}
                 >
-                  <option value="dmy">day/month/year</option>
-                  <option value="mdy">month/day/year</option>
+                  <option value="dmy">{t("day/month/year")}</option>
+                  <option value="mdy">{t("month/day/year")}</option>
                 </select>
               </label>
             </div>
             {!columns.external_ref && (
               <p className="muted small">
-                Without a work-order number column, rows are matched by bus + reported date + work description; changing any of those in Access would
-                import the row again as new.
+                {t("Without a work-order number column, rows are matched by bus + reported date + work description; changing any of those in Access would import the row again as new.")}
               </p>
             )}
           </details>
@@ -163,12 +161,12 @@ export default function MaintImport({
           {Object.keys(preview.value_maps).length > 0 && (
             <details open={!preview.remembered}>
               <summary className="small">
-                <strong>Values</strong> — how the export's wording maps to the app
+                <strong>{t("Values")}</strong> — {t("how the export's wording maps to the app")}
               </summary>
               <div className="stack pt-tables">
                 {Object.entries(preview.value_maps).map(([field, list]) => (
                   <div key={field} className="stack-tight">
-                    <h3>{VALUE_LABELS[field] ?? field}</h3>
+                    <h3>{t(VALUE_LABELS[field]) ?? field}</h3>
                     <div className="map-grid">
                       {list.map((v) => (
                         <label key={v.value} className={`field inline${values[field]?.[v.value] ? "" : " unmapped"}`}>
@@ -182,7 +180,7 @@ export default function MaintImport({
                               setDirty(true);
                             }}
                           >
-                            <option value="">— default ({defaults[field]}) —</option>
+                            <option value="">{t("— default ({defaults}) —", { defaults: defaults[field] })}</option>
                             {choices[field]?.map((c) => (
                               <option key={c.value} value={c.value}>
                                 {c.label}
@@ -201,37 +199,35 @@ export default function MaintImport({
           {dirty ? (
             <div className="row">
               <button className="primary" disabled={busy} onClick={() => void run(file, "preview", { columns, values, dateOrder })}>
-                Update preview
+                {t("Update preview")}
               </button>
-              <span className="muted small align-end">The mapping changed; update the preview before importing.</span>
+              <span className="muted small align-end">{t("The mapping changed; update the preview before importing.")}</span>
             </div>
           ) : (
             preview.ready &&
             preview.would && (
               <>
                 <dl className="kv">
-                  <dt>Readable rows</dt>
+                  <dt>{t("Readable rows")}</dt>
                   <dd>
                     {formatInteger(preview.rows ?? 0)}
-                    {preview.skipped ? <span className="muted"> · {formatInteger(preview.skipped)} skipped</span> : null}
+                    {preview.skipped ? <span className="muted">{t("· {skipped} skipped", { skipped: formatInteger(preview.skipped) })}</span> : null}
                   </dd>
-                  <dt>Would import</dt>
+                  <dt>{t("Would import")}</dt>
                   <dd>
-                    <strong>{formatInteger(preview.would.new)} new</strong> · {formatInteger(preview.would.update)} updated ·{" "}
-                    {formatInteger(preview.would.unchanged)} unchanged
+                    <strong>{t("{new} new", { new: formatInteger(preview.would.new) })}</strong> ·{" "}
+                    {t("{updated} updated · {unchanged} unchanged", { updated: formatInteger(preview.would.update), unchanged: formatInteger(preview.would.unchanged) })}
                   </dd>
                 </dl>
                 {preview.skipped_examples && preview.skipped_examples.length > 0 && (
                   <details>
-                    <summary className="small">Skipped rows</summary>
+                    <summary className="small">{t("Skipped rows")}</summary>
                     <ul className="small">
                       {preview.skipped_examples.map((s) => (
-                        <li key={s.line}>
-                          Line {s.line}: {s.reason}
-                        </li>
+                        <li key={s.line}>{t("Line {line}: {reason}", { line: s.line, reason: s.reason })}</li>
                       ))}
                     </ul>
-                    <p className="muted small">Buses must be in Fleet (by fleet number or plate).</p>
+                    <p className="muted small">{t("Buses must be in Fleet (by fleet number or plate).")}</p>
                   </details>
                 )}
                 {preview.preview && preview.preview.length > 0 && (
@@ -240,13 +236,13 @@ export default function MaintImport({
                       <thead>
                         <tr>
                           <th />
-                          <th>WO</th>
-                          <th className="num">Bus</th>
-                          <th>Reported → closed</th>
-                          <th>Work</th>
-                          <th>Type · category</th>
-                          <th>Status</th>
-                          <th>Workshop</th>
+                          <th>{t("WO")}</th>
+                          <th className="num">{t("Bus")}</th>
+                          <th>{t("Reported → closed")}</th>
+                          <th>{t("Work")}</th>
+                          <th>{t("Type · category")}</th>
+                          <th>{t("Status")}</th>
+                          <th>{t("Workshop")}</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -260,14 +256,14 @@ export default function MaintImport({
                             <td className="mono small">{r.external_ref.startsWith("auto:") ? "—" : r.external_ref}</td>
                             <td className="num mono">{r.bus_id}</td>
                             <td className="nowrap">
-                              {r.reported_date}
-                              {r.completed_date && ` → ${r.completed_date}`}
+                              {formatDay(r.reported_date)}
+                              {r.completed_date && ` → ${formatDay(r.completed_date)}`}
                             </td>
                             <td>{r.title}</td>
                             <td className="small">
-                              {labels.type[r.type ?? ""] ?? r.type} · {labels.category.get(r.category ?? "") ?? r.category}
+                              {t(labels.type[r.type ?? ""] ?? r.type ?? "")} · {labels.category.get(r.category ?? "") ?? r.category}
                             </td>
-                            <td>{labels.status[r.status ?? ""] ?? r.status}</td>
+                            <td>{t(labels.status[r.status ?? ""] ?? r.status ?? "")}</td>
                             <td>{r.workshop ?? <span className="muted">—</span>}</td>
                           </tr>
                         ))}
@@ -281,7 +277,7 @@ export default function MaintImport({
                     disabled={busy || preview.would.new + preview.would.update === 0}
                     onClick={() => void run(file, "import", { columns, values, dateOrder })}
                   >
-                    {busy ? "Importing…" : `Import ${formatInteger(preview.would.new)} new, update ${formatInteger(preview.would.update)}`}
+                    {busy ? t("Importing…") : t("Import {new} new, update {update}", { new: formatInteger(preview.would.new), update: formatInteger(preview.would.update) })}
                   </button>
                   <button
                     onClick={() => {
@@ -289,7 +285,7 @@ export default function MaintImport({
                       setFile(null);
                     }}
                   >
-                    Cancel
+                    {t("Cancel")}
                   </button>
                 </div>
               </>

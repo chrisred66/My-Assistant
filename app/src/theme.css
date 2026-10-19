@@ -476,6 +476,78 @@ details.card > summary {
   background: transparent;
   color: var(--muted);
 }
+/* The update prompt (components/UpdateBanner.tsx): bottom right, above the page. */
+.update-banner {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 50;
+  width: min(360px, calc(100vw - 32px));
+  gap: 8px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.25);
+}
+.update-banner progress {
+  width: 100%;
+}
+.update-notes {
+  max-height: 6em;
+  overflow: auto;
+  white-space: pre-line;
+}
+/* The Daily Feed's day selector (components/DayPicker.tsx) and its month view. */
+.day-picker {
+  position: relative;
+  min-width: 0;
+  max-width: 100%;
+}
+.day-picker .segmented {
+  flex-wrap: nowrap;
+}
+.day-picker .segmented button {
+  white-space: nowrap;
+}
+.calendar {
+  position: fixed;
+  z-index: 70;
+  width: 280px;
+  max-width: calc(100vw - 32px);
+  gap: 8px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.25);
+}
+.calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+  text-align: center;
+}
+.calendar-weekday {
+  font-size: 0.75rem;
+  color: var(--muted);
+  padding: 2px 0;
+}
+.calendar-day {
+  padding: 6px 0;
+  border: 1px solid transparent;
+  background: none;
+  font-variant-numeric: tabular-nums;
+}
+.calendar-day:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+.calendar-day:not(:disabled) {
+  font-weight: 600;
+}
+.calendar-day.on {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+}
+.lang-switch button {
+  width: auto;
+  padding: 0 10px;
+  font-size: 0.85rem;
+}
 .theme-switch button svg {
   width: 16px;
   height: 16px;
@@ -582,6 +654,20 @@ details.card > summary {
   .code-block {
     max-width: 100%;
     overflow-x: auto;
+  }
+  /* The page header (title, description, tabs) scrolls away with the page: pinned, it filled much of a phone's screen
+     and the page slid underneath it. Only the slim top bar stays. */
+  .content .sticky-head {
+    position: static;
+    margin-top: 0;
+    padding-top: 0;
+  }
+  /* A sideways-scrolling row (tabs, wide tables) still lets an up-or-down swipe scroll the page. */
+  .segmented,
+  .feed-tabs,
+  .data-table {
+    touch-action: pan-x pan-y;
+    overscroll-behavior-x: contain;
   }
 }
 

@@ -12,6 +12,7 @@ import { focusMain, saveBallPosition } from "./lib/ball";
 import { formatCompact, formatInteger, toIsoDate } from "./lib/format";
 import { getToken, loadSettings } from "./lib/settings";
 import "./UsageBall.css";
+import { t } from "./lib/i18n";
 
 const ROTATE_MS = 6000;
 const REFRESH_MS = 2 * 60 * 1000;
@@ -122,20 +123,20 @@ export default function UsageBall() {
       const settings = await loadSettings();
       const token = await getToken();
       if (!token) {
-        setProblem("Sign in");
+        setProblem(t("Sign in"));
         return;
       }
-      configureApi({ baseUrl: settings.serverUrl, token, onUnauthorized: () => setProblem("Sign in") });
+      configureApi({ baseUrl: settings.serverUrl, token, onUnauthorized: () => setProblem(t("Sign in")) });
       const now = new Date();
       const today = toIsoDate(now);
       const monthStart = toIsoDate(new Date(now.getFullYear(), now.getMonth(), 1));
       const [day, month, cc] = await Promise.all([api.usageSummary(today, today, "day"), api.usageSummary(monthStart, today, "month"), claudeCodeTotals()]);
-      const t = { claude_code: cc } as Totals;
-      for (const p of PROVIDERS) t[p] = { today: tokens(day.rows, p), month: tokens(month.rows, p) };
-      setTotals(t);
+      const next = { claude_code: cc } as Totals;
+      for (const p of PROVIDERS) next[p] = { today: tokens(day.rows, p), month: tokens(month.rows, p) };
+      setTotals(next);
       setProblem(null);
     } catch {
-      setProblem("Offline");
+      setProblem(t("Offline"));
     }
   }, []);
 
@@ -158,21 +159,21 @@ export default function UsageBall() {
   }, []);
 
   const provider = ITEMS[index % ITEMS.length];
-  const t = totals?.[provider];
+  const tot = totals?.[provider];
   const current = activities.length ? activities.reduce((a, b) => (b.startedAt > a.startedAt ? b : a)) : null;
 
   const title = current
-    ? `${activities.map((a) => `${a.label} (${elapsed(now - a.startedAt)})`).join("\n")}\nDouble-click to open My Assistant`
+    ? `${activities.map((a) => `${a.label} (${elapsed(now - a.startedAt)})`).join("\n")}\n${t("Double-click to open My Assistant")}`
     : totals
       ? ITEMS.map((p) => {
           const x = totals[p];
-          return `${ITEM_LABELS[p]}: ${
+          return `${t(ITEM_LABELS[p])}: ${
             x
-              ? `today ${formatInteger(x.today.input)} in / ${formatInteger(x.today.output)} out, this month ${formatInteger(x.month.input)} in / ${formatInteger(x.month.output)} out`
-              : "not available"
+              ? t("today {input} in / {output} out, this month {input2} in / {output2} out", { input: formatInteger(x.today.input), output: formatInteger(x.today.output), input2: formatInteger(x.month.input), output2: formatInteger(x.month.output) })
+              : t("not available")
           }`;
-        }).join("\n") + "\nDouble-click to open My Assistant"
-      : "Double-click to open My Assistant";
+        }).join("\n") + "\n" + t("Double-click to open My Assistant")
+      : t("Double-click to open My Assistant");
 
   // The provider's name is a ribbon across the top of the disc; the disc holds the numbers.
   return (
@@ -198,7 +199,7 @@ export default function UsageBall() {
           </div>
           <span className="ball-divider" data-tauri-drag-region />
           <div className="ball-usage" key={provider} data-tauri-drag-region>
-            {totals ? <InOutRows v={t?.today} inline /> : <span className="ball-value small">…</span>}
+            {totals ? <InOutRows v={tot?.today} inline /> : <span className="ball-value small">…</span>}
           </div>
         </div>
       ) : (
@@ -209,11 +210,9 @@ export default function UsageBall() {
             </span>
           ) : (
             <div className="ball-body" key={provider} data-tauri-drag-region>
-              {totals ? <InOutRows v={t?.today} /> : <span className="ball-value">…</span>}
-              {t && (
-                <span className="ball-month" data-tauri-drag-region>
-                  {formatCompact(t.month.input + t.month.output)} this month
-                </span>
+              {totals ? <InOutRows v={tot?.today} /> : <span className="ball-value">…</span>}
+              {tot && (
+                <span className="ball-month" data-tauri-drag-region>{t("{compact} this month", { compact: formatCompact(tot.month.input + tot.month.output) })}</span>
               )}
             </div>
           )}

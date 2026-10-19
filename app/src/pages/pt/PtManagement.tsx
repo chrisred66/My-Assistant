@@ -9,6 +9,7 @@ import Charging from "./Charging";
 import Operations from "./Operations";
 import Drivers from "./Drivers";
 import Trials from "./Trials";
+import { t } from "../../lib/i18n";
 
 type Section = "fleet" | "operations" | "drivers" | "trials" | "charging" | "maintenance";
 
@@ -48,22 +49,22 @@ export default function PtManagement({ user }: { user: User }) {
     <section className="page">
       <div className="sticky-head">
         <header className="page-header">
-          <h1>PT Management</h1>
-          <p className="muted">Green Bus Assessment toolkit: fleet, operations, trials, charging, and repair &amp; maintenance.</p>
+          <h1>{t("PT Management")}</h1>
+          <p className="muted">{t("Green Bus Assessment toolkit: fleet, operations, trials, charging, and repair & maintenance.")}</p>
         </header>
 
-        <div className="segmented" role="tablist" aria-label="PT Management sections">
+        <div className="segmented" role="tablist" aria-label={t("PT Management sections")}>
           {sections.map((s) => (
             <button key={s.id} role="tab" aria-selected={current.id === s.id} className={current.id === s.id ? "on" : ""} onClick={() => setSection(s.id)}>
-              {s.label}
+              {t(s.label)}
             </button>
           ))}
         </div>
-        <p className="muted small">{current.description}</p>
+        <p className="muted small">{t(current.description)}</p>
       </div>
 
       <ErrorText message={error} />
-      {status === null && !error && <p className="muted">Checking the PT database…</p>}
+      {status === null && !error && <p className="muted">{t("Checking the PT database…")}</p>}
 
       {status && !status.connected && <Setup status={status} owner={superAdmin} onRetry={() => void load()} />}
 
@@ -76,12 +77,12 @@ export default function PtManagement({ user }: { user: User }) {
 
       {status?.connected && superAdmin && status.tables && (
         <details className="card">
-          <summary>Database: {status.database}</summary>
+          <summary>{t("Database: {database}", { database: status.database })}</summary>
           <table className="data-table pt-tables">
             <thead>
               <tr>
-                <th>Table</th>
-                <th className="num">Rows</th>
+                <th>{t("Table")}</th>
+                <th className="num">{t("Rows")}</th>
               </tr>
             </thead>
             <tbody>
@@ -103,31 +104,30 @@ function Setup({ status, owner, onRetry }: { status: PtStatus; owner: boolean; o
   if (!owner) {
     return (
       <div className="card stack">
-        <h2>Not set up yet</h2>
-        <p className="muted">The PT Management data hasn't been loaded on the server yet. Please check back later.</p>
+        <h2>{t("Not set up yet")}</h2>
+        <p className="muted">{t("The PT Management data hasn't been loaded on the server yet. Please check back later.")}</p>
       </div>
     );
   }
   return (
     <div className="card stack">
-      <h2>Import the GBA database</h2>
+      <h2>{t("Import the GBA database")}</h2>
       <p className="error-text small">{status.error}</p>
       <ol className="steps">
         <li>
-          On the machine that has the data, export <span className="mono">{status.database}</span> (phpMyAdmin → select the database → Export
-          → SQL).
+          {t("On the machine that has the data, export {database} (phpMyAdmin → select the database → Export → SQL).", { database: status.database })}
         </li>
         <li>
-          Here, in phpMyAdmin, create a database named <span className="mono">{status.database}</span> (utf8mb4) and import the file.
+          {t("Here, in phpMyAdmin, create a database named {database} (utf8mb4) and import the file.", { database: status.database })}
         </li>
         <li>
-          Give the app's database user access (phpMyAdmin → SQL tab):
-          <pre className="mono code-block">GRANT ALL PRIVILEGES ON {status.database}.* TO 'chrismanager'@'localhost';</pre>
+          {t("Give the app's database user access (phpMyAdmin → SQL tab):")}
+          <pre className="mono code-block">{`GRANT ALL PRIVILEGES ON ${status.database}.* TO 'chrismanager'@'localhost';`}</pre>
         </li>
       </ol>
       <div>
         <button className="primary" onClick={onRetry}>
-          Check again
+          {t("Check again")}
         </button>
       </div>
     </div>

@@ -162,7 +162,7 @@ $router->get('/pt/trips/options', function (Request $r) {
         'trips'    => (int) $range['trips'],
         'buses'    => array_map(fn ($b) => ['bus_id' => (int) $b['bus_id'], 'label' => (string) $b['label'], 'energy' => $b['energy'], 'model' => $b['model']], $buses),
         'routes'   => array_column($routes, 'route'),
-        'issues'   => array_map(fn ($i) => ['code' => $i[0], 'label' => $i[1], 'severity' => $i[2]], ptIssueRules()),
+        'issues'   => array_map(fn ($i) => ['code' => $i[0], 'label' => \ChrisManager\I18n::t($i[1]), 'severity' => $i[2]], ptIssueRules()),
         'thresholds' => [
             'max_trip_km' => PT_MAX_TRIP_KM, 'high_kwh_per_100km' => PT_HIGH_KWH_PER_100KM,
             'high_kg_per_100km' => PT_HIGH_KG_PER_100KM, 'low_end_soc' => PT_LOW_END_SOC, 'low_start_soc' => PT_LOW_START_SOC,

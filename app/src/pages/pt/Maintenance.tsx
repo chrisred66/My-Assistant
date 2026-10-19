@@ -16,8 +16,9 @@ import {
   type PtPlanDue,
   type User,
 } from "../../lib/api";
-import { errorMessage, formatInteger, LOCALE } from "../../lib/format";
+import { errorMessage, formatDay, formatInteger, LOCALE } from "../../lib/format";
 import MaintImport from "./MaintImport";
+import { t } from "../../lib/i18n";
 
 const TYPE_LABELS: Record<PtMaintType, string> = {
   preventive: "Preventive service",
@@ -100,7 +101,7 @@ export default function Maintenance({ user }: { user: User }) {
   const cur = options?.currency ?? "";
   const money = (v: number) => `${cur} ${formatInteger(Math.round(v))}`;
 
-  if (!options) return error ? <ErrorText message={error} /> : <p className="muted">Loading…</p>;
+  if (!options) return error ? <ErrorText message={error} /> : <p className="muted">{t("Loading…")}</p>;
 
   const openRecords = data?.records.filter((m) => OPEN.includes(m.status)) ?? [];
   const closedRecords = (data?.records.filter((m) => !OPEN.includes(m.status)) ?? []).sort(
@@ -122,7 +123,7 @@ export default function Maintenance({ user }: { user: User }) {
 
   const overdue = plans?.due.filter((d) => d.state === "overdue").length ?? 0;
   const dueSoon = plans?.due.filter((d) => d.state === "due_soon").length ?? 0;
-  const t = data?.totals;
+  const mTotals = data?.totals;
 
   const monthPoints: Point[] = (data?.by_month ?? []).map((m) => ({
     label: monthLabel(String(m.key)),
@@ -139,7 +140,7 @@ export default function Maintenance({ user }: { user: User }) {
       label: catLabel.get(String(c.key)) ?? String(c.key),
       value: (shareOf(c) / shareTotal) * 100,
       color: "c3",
-      detail: `${c.records} work order(s) · ${c.failures} failure(s) · ${formatInteger(c.downtime_hours)} h down · ${money(c.cost)}`,
+      detail: t("{records} work order(s) · {failures} failure(s) · {downtime_hours} h down · {cost}", { records: c.records, failures: c.failures, downtime_hours: formatInteger(c.downtime_hours), cost: money(c.cost) }),
     }));
   const downtimeBars: BarItem[] = (data?.by_bus ?? [])
     .filter((b) => b.downtime_hours > 0)
@@ -147,50 +148,50 @@ export default function Maintenance({ user }: { user: User }) {
     .slice(0, 12)
     .map((b) => ({
       key: String(b.key),
-      label: `Bus ${b.key}`,
+      label: t("Bus {key}", { key: b.key }),
       value: b.downtime_hours,
       color: "serious",
-      detail: `${b.availability}% available · ${b.records} work order(s) · ${money(b.cost)}${b.km ? ` · ${formatInteger(b.km)} km run` : ""}`,
+      detail: `${t("{availability}% available · {records} work order(s)", { availability: b.availability, records: b.records })} · ${money(b.cost)}${b.km ? t(" · {km} km run", { km: formatInteger(b.km) }) : ""}`,
     }));
   const typeBars: BarItem[] = (data?.by_type ?? [])
     .sort((a, b) => b.records - a.records)
     .map((x) => ({
       key: String(x.key),
-      label: TYPE_LABELS[x.key as PtMaintType] ?? String(x.key),
+      label: t(TYPE_LABELS[x.key as PtMaintType]) ?? String(x.key),
       value: x.records,
       color: x.key === "breakdown" ? "critical" : x.key === "corrective" || x.key === "accident" ? "serious" : x.key === "preventive" || x.key === "inspection" ? "good" : "neutral",
-      detail: `${money(x.cost)} · ${formatInteger(x.downtime_hours)} h down`,
+      detail: t("{cost} · {downtime_hours} h down", { cost: money(x.cost), downtime_hours: formatInteger(x.downtime_hours) }),
     }));
 
   return (
     <div className="stack">
       <div className="filters row wrap">
         <label className="field inline">
-          <span>Range</span>
+          <span>{t("Range")}</span>
           <select value={preset} onChange={(e) => choosePreset(e.target.value as Preset)}>
-            <option value="30">Last 30 days</option>
-            <option value="90">Last 90 days</option>
-            <option value="365">Last 12 months</option>
-            <option value="all">All records</option>
-            <option value="custom">Custom…</option>
+            <option value="30">{t("Last 30 days")}</option>
+            <option value="90">{t("Last 90 days")}</option>
+            <option value="365">{t("Last 12 months")}</option>
+            <option value="all">{t("All records")}</option>
+            <option value="custom">{t("Custom…")}</option>
           </select>
         </label>
         {preset === "custom" && (
           <>
             <label className="field inline">
-              <span>From</span>
+              <span>{t("From")}</span>
               <input type="date" value={range.from} max={range.to} onChange={(e) => e.target.value && setRange({ ...range, from: e.target.value })} />
             </label>
             <label className="field inline">
-              <span>To</span>
+              <span>{t("To")}</span>
               <input type="date" value={range.to} min={range.from} onChange={(e) => e.target.value && setRange({ ...range, to: e.target.value })} />
             </label>
           </>
         )}
         <label className="field inline">
-          <span>Bus</span>
+          <span>{t("Bus")}</span>
           <select value={filter.bus ?? ""} onChange={(e) => setFilter({ ...filter, bus: e.target.value || undefined })}>
-            <option value="">All buses</option>
+            <option value="">{t("All buses")}</option>
             {options.buses.map((b) => (
               <option key={b.bus_id} value={b.bus_id}>
                 {b.bus_id} · {b.model}
@@ -199,20 +200,20 @@ export default function Maintenance({ user }: { user: User }) {
           </select>
         </label>
         <label className="field inline">
-          <span>Type</span>
+          <span>{t("Type")}</span>
           <select value={filter.type ?? ""} onChange={(e) => setFilter({ ...filter, type: e.target.value || undefined })}>
-            <option value="">All types</option>
+            <option value="">{t("All types")}</option>
             {options.types.map((x) => (
               <option key={x} value={x}>
-                {TYPE_LABELS[x]}
+                {t(TYPE_LABELS[x])}
               </option>
             ))}
           </select>
         </label>
         <label className="field inline">
-          <span>Category</span>
+          <span>{t("Category")}</span>
           <select value={filter.category ?? ""} onChange={(e) => setFilter({ ...filter, category: e.target.value || undefined })}>
-            <option value="">All categories</option>
+            <option value="">{t("All categories")}</option>
             {options.categories.map((c) => (
               <option key={c.code} value={c.code}>
                 {c.label}
@@ -221,12 +222,12 @@ export default function Maintenance({ user }: { user: User }) {
           </select>
         </label>
         <label className="field inline">
-          <span>Status</span>
+          <span>{t("Status")}</span>
           <select value={filter.status ?? ""} onChange={(e) => setFilter({ ...filter, status: e.target.value || undefined })}>
-            <option value="">Any status</option>
+            <option value="">{t("Any status")}</option>
             {options.statuses.map((s) => (
               <option key={s} value={s}>
-                {STATUS_LABELS[s]}
+                {t(STATUS_LABELS[s])}
               </option>
             ))}
           </select>
@@ -235,36 +236,29 @@ export default function Maintenance({ user }: { user: User }) {
 
       <ErrorText message={error} />
 
-      {t && (
+      {mTotals && (
         <div className="tiles">
           <div className="tile">
-            <span className="tile-label">Open work orders</span>
-            <span className="tile-value">{formatInteger(t.open)}</span>
+            <span className="tile-label">{t("Open work orders")}</span>
+            <span className="tile-value">{formatInteger(mTotals.open)}</span>
             {(overdue > 0 || dueSoon > 0) && (
-              <span className={overdue ? "error-text small" : "muted small"}>
-                {overdue} service(s) overdue · {dueSoon} due soon
-              </span>
+              <span className={overdue ? "error-text small" : "muted small"}>{t("{overdue} service(s) overdue · {dueSoon} due soon", { overdue, dueSoon })}</span>
             )}
           </div>
           <div className="tile">
-            <span className="tile-label">Fleet availability</span>
-            <span className="tile-value">{t.availability === null ? "—" : `${t.availability}%`}</span>
-            <span className="muted small">{formatInteger(t.downtime_hours)} bus-hours out of service</span>
+            <span className="tile-label">{t("Fleet availability")}</span>
+            <span className="tile-value">{mTotals.availability === null ? "—" : `${mTotals.availability}%`}</span>
+            <span className="muted small">{t("{downtime_hours} bus-hours out of service", { downtime_hours: formatInteger(mTotals.downtime_hours) })}</span>
           </div>
           <div className="tile">
-            <span className="tile-label">Maintenance cost</span>
-            <span className="tile-value">{money(t.cost)}</span>
-            <span className="muted small">
-              {t.cost_per_km !== null ? `${cur} ${t.cost_per_km.toFixed(2)} per km · ` : ""}parts {money(t.parts)}
-            </span>
+            <span className="tile-label">{t("Maintenance cost")}</span>
+            <span className="tile-value">{money(mTotals.cost)}</span>
+            <span className="muted small">{t("{v}parts {parts}", { v: mTotals.cost_per_km !== null ? t("{cur} {cost_per_km} per km · ", { cur, cost_per_km: mTotals.cost_per_km.toFixed(2) }) : "", parts: money(mTotals.parts) })}</span>
           </div>
           <div className="tile">
-            <span className="tile-label">Failures</span>
-            <span className="tile-value">{formatInteger(t.failures)}</span>
-            <span className="muted small">
-              {t.failures_per_10k_km !== null ? `${t.failures_per_10k_km} per 10,000 km · ` : ""}
-              {t.completed} of {t.reported} work orders done
-            </span>
+            <span className="tile-label">{t("Failures")}</span>
+            <span className="tile-value">{formatInteger(mTotals.failures)}</span>
+            <span className="muted small">{t("{v}{completed} of {reported} work orders done", { v: mTotals.failures_per_10k_km !== null ? t("{failures_per_10k_km} per 10,000 km · ", { failures_per_10k_km: mTotals.failures_per_10k_km }) : "", completed: mTotals.completed, reported: mTotals.reported })}</span>
           </div>
         </div>
       )}
@@ -274,30 +268,30 @@ export default function Maintenance({ user }: { user: User }) {
           <div className="chart-grid">
             <div className="card stack">
               <div className="row space-between wrap">
-                <h2>Cost by month</h2>
-                <SeriesLegend series={[{ label: "Parts", color: PARTS }, { label: "Labour", color: LABOUR }]} />
+                <h2>{t("Cost by month")}</h2>
+                <SeriesLegend series={[{ label: t("Parts"), color: PARTS }, { label: t("Labour"), color: LABOUR }]} />
               </div>
               <ColumnChart
                 points={monthPoints}
                 series={[
-                  { key: "parts", label: "Parts", color: PARTS },
-                  { key: "labour", label: "Labour", color: LABOUR },
+                  { key: "parts", label: t("Parts"), color: PARTS },
+                  { key: "labour", label: t("Labour"), color: LABOUR },
                 ]}
                 format={money}
                 formatTick={(v) => formatInteger(v)}
                 height={220}
-                label="Maintenance cost by month"
+                label={t("Maintenance cost by month")}
               />
             </div>
             <div className="card stack">
               <div className="row space-between wrap">
-                <h2>Work by category</h2>
-                <div className="segmented" role="group" aria-label="Share of">
+                <h2>{t("Work by category")}</h2>
+                <div className="segmented" role="group" aria-label={t("Share of")}>
                   {(
                     [
-                      ["records", "Work orders"],
-                      ["cost", "Cost"],
-                      ["downtime", "Downtime"],
+                      ["records", t("Work orders")],
+                      ["cost", t("Cost")],
+                      ["downtime", t("Downtime")],
                     ] as const
                   ).map(([k, label]) => (
                     <button key={k} className={shareBy === k ? "on" : ""} aria-pressed={shareBy === k} onClick={() => setShareBy(k)}>
@@ -310,33 +304,33 @@ export default function Maintenance({ user }: { user: User }) {
                 <BarList
                   items={categoryBars}
                   format={(v) => `${v.toFixed(v < 10 ? 1 : 0)}%`}
-                  label={`Share of ${shareBy} by category`}
+                  label={t("Share of {shareBy} by category", { shareBy })}
                   onSelect={(it) => setFilter({ ...filter, category: it.key })}
                 />
               ) : (
-                <p className="muted small">Nothing recorded for this measure yet.</p>
+                <p className="muted small">{t("Nothing recorded for this measure yet.")}</p>
               )}
-              <p className="muted small">Share of all {shareBy === "records" ? "work orders" : shareBy === "cost" ? "maintenance cost" : "downtime"} in the range. Click a category to filter.</p>
+              <p className="muted small">{t("Share of all {v} in the range. Click a category to filter.", { v: shareBy === "records" ? t("work orders") : shareBy === "cost" ? t("maintenance cost") : "downtime" })}</p>
             </div>
           </div>
           <div className="chart-grid">
             <div className="card stack">
-              <h2>Downtime by bus (hours)</h2>
+              <h2>{t("Downtime by bus (hours)")}</h2>
               {downtimeBars.length ? (
-                <BarList items={downtimeBars} format={(v) => formatInteger(v)} label="Downtime by bus" onSelect={(it) => setFilter({ ...filter, bus: it.key })} />
+                <BarList items={downtimeBars} format={(v) => formatInteger(v)} label={t("Downtime by bus")} onSelect={(it) => setFilter({ ...filter, bus: it.key })} />
               ) : (
-                <p className="muted small">No downtime recorded in this range.</p>
+                <p className="muted small">{t("No downtime recorded in this range.")}</p>
               )}
             </div>
             <div className="card stack">
-              <h2>Work orders by type</h2>
-              <BarList items={typeBars} format={(v) => formatInteger(v)} label="Work orders by type" onSelect={(it) => setFilter({ ...filter, type: it.key })} />
+              <h2>{t("Work orders by type")}</h2>
+              <BarList items={typeBars} format={(v) => formatInteger(v)} label={t("Work orders by type")} onSelect={(it) => setFilter({ ...filter, type: it.key })} />
               {data.repeat_failures.length > 0 && (
                 <div className="stack-tight">
-                  <h3>Repeat failures</h3>
+                  <h3>{t("Repeat failures")}</h3>
                   {data.repeat_failures.map((r) => (
-                    <span key={`${r.bus_id}/${r.category}`} className="small" title="Same bus, same category, more than one failure">
-                      <span className="badge badge-serious">×{r.count}</span> Bus {r.bus_id}: {catLabel.get(r.category) ?? r.category}
+                    <span key={`${r.bus_id}/${r.category}`} className="small" title={t("Same bus, same category, more than one failure")}>
+                      <span className="badge badge-serious">×{r.count}</span> {t("Bus {bus_id}", { bus_id: r.bus_id })}: {catLabel.get(r.category) ?? r.category}
                     </span>
                   ))}
                 </div>
@@ -349,19 +343,19 @@ export default function Maintenance({ user }: { user: User }) {
 
       <div className="card stack" id="pt-work-orders">
         <div className="row space-between wrap">
-          <h2>Work orders</h2>
+          <h2>{t("Work orders")}</h2>
           {canAdd && (
             <div className="row">
               {canEdit && (
                 <button className="small-btn" onClick={() => setImportOpen((o) => !o)} aria-expanded={importOpen}>
-                  {importOpen ? "Close import" : "Import from Access…"}
+                  {importOpen ? t("Close import") : t("Import from Access…")}
                 </button>
               )}
               <button
                 className="small-btn"
                 onClick={() => setEditing(editing && !editing.record_id ? null : { type: "corrective", category: "general", status: "open", priority: "normal", reported_date: today() })}
               >
-                {editing && !editing.record_id ? "Cancel" : "New work order…"}
+                {editing && !editing.record_id ? t("Cancel") : t("New work order…")}
               </button>
             </div>
           )}
@@ -379,23 +373,20 @@ export default function Maintenance({ user }: { user: User }) {
           />
         )}
         {data && data.records.length === 0 && (
-          <p className="muted">
-            No work orders {Object.values(filter).some(Boolean) ? "match these filters" : "yet"}. Record repairs, inspections and services here; open
-            ones always stay listed whatever the date range.
-          </p>
+          <p className="muted">{t("No work orders {v}. Record repairs, inspections and services here; open ones always stay listed whatever the date range.", { v: Object.values(filter).some(Boolean) ? t("match these filters") : "yet" })}</p>
         )}
         {data && data.records.length > 0 && (
           <>
-            <h3>Open ({openRecords.length})</h3>
+            <h3>{t("Open ({count})", { count: openRecords.length })}</h3>
             {openRecords.length === 0 ? (
-              <p className="muted small">No open work orders.</p>
+              <p className="muted small">{t("No open work orders.")}</p>
             ) : (
               <WorkOrderTable rows={openRecords} {...tableProps} />
             )}
             {closedRecords.length > 0 && (
               <details className="closed-orders">
                 <summary>
-                  Closed ({closedRecords.length}) <span className="muted small">reported in the selected range</span>
+                  {t("Closed ({count})", { count: closedRecords.length })} <span className="muted small">{t("reported in the selected range")}</span>
                 </summary>
                 <WorkOrderTable rows={closedRecords} {...tableProps} />
               </details>
@@ -457,13 +448,13 @@ function WorkOrderTable({
       <table className="data-table">
         <thead>
           <tr>
-            <th>{closed ? "Reported → closed" : "Reported"}</th>
-            <th className="num">Bus</th>
-            <th>Work</th>
-            <th>Category</th>
-            <th>Status</th>
-            {closed && <th className="num">Downtime</th>}
-            {closed && <th className="num">Cost</th>}
+            <th>{closed ? t("Reported → closed") : t("Reported")}</th>
+            <th className="num">{t("Bus")}</th>
+            <th>{t("Work")}</th>
+            <th>{t("Category")}</th>
+            <th>{t("Status")}</th>
+            {closed && <th className="num">{t("Downtime")}</th>}
+            {closed && <th className="num">{t("Cost")}</th>}
             {canEdit && <th />}
           </tr>
         </thead>
@@ -525,36 +516,36 @@ function WorkOrderRow({
     <>
       <tr className={closing ? "expanded" : undefined}>
         <td className="nowrap">
-          {m.reported_date}
-          {!isOpen && m.completed_date && <div className="small">→ {m.completed_date}</div>}
-          {isOpen && <div className="muted small">{daysOpen(m.reported_date)} open</div>}
+          {formatDay(m.reported_date)}
+          {!isOpen && m.completed_date && <div className="small">→ {formatDay(m.completed_date)}</div>}
+          {isOpen && <div className="muted small">{t("{reported_date} open", { reported_date: daysOpen(m.reported_date) })}</div>}
         </td>
         <td className="num mono">{m.bus_id}</td>
         <td>
           <strong>{m.title}</strong> {m.priority !== "normal" && <span className={`badge badge-${PRIORITY_BADGE[m.priority]}`}>{m.priority}</span>}
-          {m.external_ref && !m.external_ref.startsWith("auto:") && <span className="muted small mono"> WO {m.external_ref}</span>}
-          {m.source === "access" && <span className="muted small" title="Imported from an Access export"> · imported</span>}
+          {m.external_ref && !m.external_ref.startsWith("auto:") && <span className="muted small mono">{t("WO {external_ref}", { external_ref: m.external_ref })}</span>}
+          {m.source === "access" && <span className="muted small" title={t("Imported from an Access export")}> {t("· imported")}</span>}
           <div className="muted small">
-            {TYPE_LABELS[m.type]}
+            {t(TYPE_LABELS[m.type])}
             {m.plan_name && ` · plan: ${m.plan_name}`}
             {m.workshop && ` · ${m.workshop}`}
-            {m.odometer_km !== null && ` · ${formatInteger(m.odometer_km)} km`}
+            {m.odometer_km !== null && ` · ${t("{n} km", { n: formatInteger(m.odometer_km) })}`}
           </div>
           {m.description && <div className="small">{m.description}</div>}
-          {!isOpen && m.closing_note && <div className="small">Closing note: {m.closing_note}</div>}
+          {!isOpen && m.closing_note && <div className="small">{t("Closing note: {closing_note}", { closing_note: m.closing_note })}</div>}
         </td>
         <td>{catLabel.get(m.category) ?? m.category}</td>
         <td>
           {canEdit && isOpen ? (
-            <select value={m.status} onChange={(e) => void act(() => api.ptUpdateMaint(m.record_id, { status: e.target.value as PtMaintStatus }))} aria-label={`Status of work order ${m.record_id}`}>
+            <select value={m.status} onChange={(e) => void act(() => api.ptUpdateMaint(m.record_id, { status: e.target.value as PtMaintStatus }))} aria-label={t("Status of work order {record_id}", { record_id: m.record_id })}>
               {OPEN.map((s) => (
                 <option key={s} value={s}>
-                  {STATUS_LABELS[s]}
+                  {t(STATUS_LABELS[s])}
                 </option>
               ))}
             </select>
           ) : (
-            <span className={`badge badge-${STATUS_BADGE[m.status]}`}>{STATUS_LABELS[m.status]}</span>
+            <span className={`badge badge-${STATUS_BADGE[m.status]}`}>{t(STATUS_LABELS[m.status])}</span>
           )}
         </td>
         {!isOpen && <td className="num">{m.downtime_hours === null ? "—" : `${m.downtime_hours} h`}</td>}
@@ -564,19 +555,19 @@ function WorkOrderRow({
             <div className="row">
               {isOpen ? (
                 <button className="small-btn primary" onClick={() => setClosing((c) => !c)} aria-expanded={closing}>
-                  {closing ? "Cancel" : "Close…"}
+                  {closing ? t("Cancel") : t("Close…")}
                 </button>
               ) : (
                 <button className="small-btn" onClick={() => void act(() => api.ptReopenMaint(m.record_id))}>
-                  Reopen
+                  {t("Reopen")}
                 </button>
               )}
               <button className="small-btn" onClick={onEdit}>
-                Edit
+                {t("Edit")}
               </button>
               {canRemove && (
-                <button className="small-btn danger" onClick={() => window.confirm(`Delete work order "${m.title}" for bus ${m.bus_id}?`) && void act(() => api.ptDeleteMaint(m.record_id))}>
-                  Delete
+                <button className="small-btn danger" onClick={() => window.confirm(t("Delete work order \"{title}\" for bus {bus_id}?", { title: m.title, bus_id: m.bus_id })) && void act(() => api.ptDeleteMaint(m.record_id))}>
+                  {t("Delete")}
                 </button>
               )}
             </div>
@@ -634,40 +625,40 @@ function CloseForm({ m, currency, onClosed }: { m: PtMaintRecord; currency: stri
     <form className="stack" onSubmit={(e) => void submit(e)}>
       <div className="row wrap">
         <label className="field inline">
-          <span>Closing date</span>
+          <span>{t("Closing date")}</span>
           <input type="date" value={f.closed_date} min={m.reported_date} onChange={set("closed_date")} required />
         </label>
         <label className="field inline">
-          <span>Outcome</span>
+          <span>{t("Outcome")}</span>
           <select value={f.outcome} onChange={set("outcome")}>
-            <option value="completed">Completed</option>
-            <option value="cancelled">Cancelled (not done)</option>
+            <option value="completed">{t("Completed")}</option>
+            <option value="cancelled">{t("Cancelled (not done)")}</option>
           </select>
         </label>
         <label className="field inline">
-          <span>Downtime (h, optional)</span>
-          <input type="number" min="0" step="any" value={f.downtime_hours} onChange={set("downtime_hours")} placeholder={`${formatInteger(elapsedH)} if off road throughout`} />
+          <span>{t("Downtime (h, optional)")}</span>
+          <input type="number" min="0" step="any" value={f.downtime_hours} onChange={set("downtime_hours")} placeholder={t("{elapsedH} if off road throughout", { elapsedH: formatInteger(elapsedH) })} />
         </label>
         <label className="field inline">
-          <span>Labour (h)</span>
+          <span>{t("Labour (h)")}</span>
           <input type="number" min="0" step="any" value={f.labour_hours} onChange={set("labour_hours")} />
         </label>
         <label className="field inline">
-          <span>Parts ({currency})</span>
+          <span>{t("Parts ({currency})", { currency })}</span>
           <input type="number" min="0" step="any" value={f.parts_cost} onChange={set("parts_cost")} />
         </label>
         <label className="field inline">
-          <span>Labour ({currency})</span>
+          <span>{t("Labour ({currency})", { currency })}</span>
           <input type="number" min="0" step="any" value={f.labour_cost} onChange={set("labour_cost")} />
         </label>
       </div>
       <div className="row wrap">
         <label className="field inline grow">
-          <span>Closing note (optional)</span>
-          <input value={f.closing_note} onChange={set("closing_note")} placeholder="What the workshop did or found" />
+          <span>{t("Closing note (optional)")}</span>
+          <input value={f.closing_note} onChange={set("closing_note")} placeholder={t("What the workshop did or found")} />
         </label>
         <button className="primary align-end" type="submit" disabled={busy}>
-          {busy ? "Closing…" : "Close work order"}
+          {busy ? t("Closing…") : t("Close work order")}
         </button>
       </div>
       <ErrorText message={error} />
@@ -756,12 +747,12 @@ function WorkOrderForm({
 
   return (
     <form className="stack adjust-panel" onSubmit={(e) => void submit(e)}>
-      <strong className="small">{initial.record_id ? `Edit work order #${initial.record_id}` : "New work order"}</strong>
+      <strong className="small">{initial.record_id ? t("Edit work order #{record_id}", { record_id: initial.record_id }) : t("New work order")}</strong>
       <div className="row wrap">
         <label className="field inline">
-          <span>Bus</span>
+          <span>{t("Bus")}</span>
           <select value={f.bus_id} onChange={pickBus} required>
-            <option value="">Choose…</option>
+            <option value="">{t("Choose…")}</option>
             {options.buses.map((b) => (
               <option key={b.bus_id} value={b.bus_id}>
                 {b.bus_id} · {b.model}
@@ -770,17 +761,17 @@ function WorkOrderForm({
           </select>
         </label>
         <label className="field inline">
-          <span>Type</span>
+          <span>{t("Type")}</span>
           <select value={f.type} onChange={set("type")}>
             {options.types.map((x) => (
               <option key={x} value={x}>
-                {TYPE_LABELS[x]}
+                {t(TYPE_LABELS[x])}
               </option>
             ))}
           </select>
         </label>
         <label className="field inline">
-          <span>Category</span>
+          <span>{t("Category")}</span>
           <select value={f.category} onChange={set("category")}>
             {options.categories.map((c) => (
               <option key={c.code} value={c.code}>
@@ -790,13 +781,13 @@ function WorkOrderForm({
           </select>
         </label>
         <label className="field inline grow">
-          <span>Work (short description)</span>
-          <input value={f.title} onChange={set("title")} required placeholder="e.g. Replace front brake pads" />
+          <span>{t("Work (short description)")}</span>
+          <input value={f.title} onChange={set("title")} required placeholder={t("e.g. Replace front brake pads")} />
         </label>
       </div>
       <div className="row wrap">
         <label className="field inline">
-          <span>Priority</span>
+          <span>{t("Priority")}</span>
           <select value={f.priority} onChange={set("priority")}>
             {options.priorities.map((p) => (
               <option key={p}>{p}</option>
@@ -805,45 +796,45 @@ function WorkOrderForm({
         </label>
         {!isClosed && (
           <label className="field inline">
-            <span>Status</span>
+            <span>{t("Status")}</span>
             <select value={f.status} onChange={set("status")}>
               {OPEN.map((s) => (
                 <option key={s} value={s}>
-                  {STATUS_LABELS[s]}
+                  {t(STATUS_LABELS[s])}
                 </option>
               ))}
             </select>
           </label>
         )}
         <label className="field inline">
-          <span>Reported</span>
+          <span>{t("Reported")}</span>
           <input type="date" value={f.reported_date} onChange={set("reported_date")} required />
         </label>
         <label className="field inline">
-          <span>Workshop</span>
+          <span>{t("Workshop")}</span>
           <select value={f.workshop} onChange={set("workshop")}>
-            <option value="">— not assigned —</option>
+            <option value="">{t("— not assigned —")}</option>
             {options.workshops.map((w) => (
               <option key={w}>{w}</option>
             ))}
           </select>
         </label>
         <label className="field inline">
-          <span>Odometer (km)</span>
+          <span>{t("Odometer (km)")}</span>
           <input
             type="number"
             min="0"
             step="any"
             value={f.odometer_km}
-            placeholder={bus?.odometer_km ? `last trip: ${formatInteger(bus.odometer_km)}` : ""}
+            placeholder={bus?.odometer_km ? t("last trip: {odometer_km}", { odometer_km: formatInteger(bus.odometer_km) }) : ""}
             onChange={set("odometer_km")}
           />
         </label>
         {plansForBus.length > 0 && (
           <label className="field inline">
-            <span>Carries out plan</span>
+            <span>{t("Carries out plan")}</span>
             <select value={f.plan_id} onChange={set("plan_id")}>
-              <option value="">— none —</option>
+              <option value="">{t("— none —")}</option>
               {plansForBus.map((p) => (
                 <option key={p.plan_id} value={p.plan_id}>
                   {p.name}
@@ -854,21 +845,21 @@ function WorkOrderForm({
         )}
       </div>
       <label className="field">
-        <span>Details (optional)</span>
+        <span>{t("Details (optional)")}</span>
         <textarea rows={2} value={f.description} onChange={set("description")} />
       </label>
       {isClosed && (
         <div className="row wrap">
           <label className="field inline">
-            <span>Closing date</span>
+            <span>{t("Closing date")}</span>
             <input type="date" value={f.completed_date} min={f.reported_date} onChange={set("completed_date")} required />
           </label>
           {(
             [
-              ["downtime_hours", "Downtime (h)"],
-              ["labour_hours", "Labour (h)"],
-              ["parts_cost", `Parts (${options.currency})`],
-              ["labour_cost", `Labour (${options.currency})`],
+              ["downtime_hours", t("Downtime (h)")],
+              ["labour_hours", t("Labour (h)")],
+              ["parts_cost", t("Parts ({currency})", { currency: options.currency })],
+              ["labour_cost", t("Labour ({currency})", { currency: options.currency })],
             ] as const
           ).map(([k, label]) => (
             <label key={k} className="field inline">
@@ -877,20 +868,20 @@ function WorkOrderForm({
             </label>
           ))}
           <label className="field inline grow">
-            <span>Closing note</span>
+            <span>{t("Closing note")}</span>
             <input value={f.closing_note} onChange={set("closing_note")} />
           </label>
         </div>
       )}
       <div className="row">
         <button className="primary" type="submit" disabled={busy}>
-          {busy ? "Saving…" : initial.record_id ? "Save changes" : "Create work order"}
+          {busy ? t("Saving…") : initial.record_id ? t("Save changes") : t("Create work order")}
         </button>
         <button type="button" onClick={onCancel}>
-          Cancel
+          {t("Cancel")}
         </button>
       </div>
-      {!initial.record_id && <p className="muted small">Downtime, labour and costs are added when the work order is closed.</p>}
+      {!initial.record_id && <p className="muted small">{t("Downtime, labour and costs are added when the work order is closed.")}</p>}
       <ErrorText message={error} />
     </form>
   );
@@ -937,49 +928,42 @@ function Preventive({
 
   const due = (d: PtPlanDue) => {
     const parts: string[] = [];
-    if (d.km_left !== null) parts.push(d.km_left < 0 ? `${formatInteger(-d.km_left)} km over` : `in ${formatInteger(d.km_left)} km`);
-    if (d.days_left !== null) parts.push(d.days_left < 0 ? `${-d.days_left} days late` : `in ${d.days_left} days (${d.due_date})`);
+    if (d.km_left !== null) parts.push(d.km_left < 0 ? t("{integer} km over", { integer: formatInteger(-d.km_left) }) : t("in {km_left} km", { km_left: formatInteger(d.km_left) }));
+    if (d.days_left !== null) parts.push(d.days_left < 0 ? t("{v} days late", { v: -d.days_left }) : t("in {days_left} days ({due_date})", { days_left: d.days_left, due_date: formatDay(d.due_date) }));
     return parts.join(" · ") || "—";
   };
 
   return (
     <details className="card">
       <summary>
-        Preventive maintenance{" "}
-        <span className="muted small">
-          ({plans.plans.filter((p) => p.active).length} plan(s)
-          {urgent.length > 0 && `, ${urgent.filter((d) => d.state === "overdue").length} overdue, ${urgent.filter((d) => d.state === "due_soon").length} due soon`})
-        </span>
+        {t("Preventive maintenance")}{" "}
+        <span className="muted small">{t("({count} plan(s){v})", { count: plans.plans.filter((p) => p.active).length, v: urgent.length > 0 && t(", {count} overdue, {count2} due soon", { count: urgent.filter((d) => d.state === "overdue").length, count2: urgent.filter((d) => d.state === "due_soon").length }) })}</span>
       </summary>
       <div className="stack pt-tables">
         <ErrorText message={error} />
         {plans.plans.length === 0 ? (
           <p className="muted small">
-            No plans yet. A plan is a service repeated every so many km and/or days (for example an A-service every 10,000 km or 90 days), for every
-            bus or one model. The due list then shows which buses need it, using each bus's latest odometer reading from the trip logs.
+            {t("No plans yet. A plan is a service repeated every so many km and/or days (for example an A-service every 10,000 km or 90 days), for every bus or one model. The due list then shows which buses need it, using each bus's latest odometer reading from the trip logs.")}
           </p>
         ) : (
           <>
             <div className="row space-between wrap">
-              <span className="muted small">
-                Due dates count from the last completed work order for the plan; odometers come from the latest trip log (data up to{" "}
-                {options.buses.reduce((m, b) => (b.last_trip && b.last_trip > m ? b.last_trip : m), "") || "—"}).
-              </span>
+              <span className="muted small">{t("Due dates count from the last completed work order for the plan; odometers come from the latest trip log (data up to {v}).", { v: options.buses.reduce((m, b) => (b.last_trip && b.last_trip > m ? b.last_trip : m), "") ? formatDay(options.buses.reduce((m, b) => (b.last_trip && b.last_trip > m ? b.last_trip : m), "")) : "—" })}</span>
               <label className="check small">
-                <input type="checkbox" checked={showAll} onChange={(e) => setShowAll(e.target.checked)} /> Show all buses
+                <input type="checkbox" checked={showAll} onChange={(e) => setShowAll(e.target.checked)} /> {t("Show all buses")}
               </label>
             </div>
             {rows.length === 0 ? (
-              <p className="muted small">Nothing overdue or due soon.</p>
+              <p className="muted small">{t("Nothing overdue or due soon.")}</p>
             ) : (
               <table className="data-table">
                 <thead>
                   <tr>
-                    <th>Plan</th>
-                    <th className="num">Bus</th>
-                    <th>Last done</th>
-                    <th>Next due</th>
-                    <th>Status</th>
+                    <th>{t("Plan")}</th>
+                    <th className="num">{t("Bus")}</th>
+                    <th>{t("Last done")}</th>
+                    <th>{t("Next due")}</th>
+                    <th>{t("Status")}</th>
                     {canEdit && <th />}
                   </tr>
                 </thead>
@@ -992,16 +976,16 @@ function Preventive({
                       </td>
                       <td>
                         {d.last_done ?? "—"}
-                        {d.last_km !== null && <div className="muted small">{formatInteger(d.last_km)} km</div>}
+                        {d.last_km !== null && <div className="muted small">{t("{last_km} km", { last_km: formatInteger(d.last_km) })}</div>}
                       </td>
-                      <td>{d.state === "never_done" ? <span className="muted small">log the last service to start tracking</span> : due(d)}</td>
+                      <td>{d.state === "never_done" ? <span className="muted small">{t("log the last service to start tracking")}</span> : due(d)}</td>
                       <td>
-                        <span className={`badge badge-${DUE_BADGE[d.state]}`}>{DUE_LABEL[d.state]}</span>
+                        <span className={`badge badge-${DUE_BADGE[d.state]}`}>{t(DUE_LABEL[d.state])}</span>
                       </td>
                       {canEdit && (
                         <td className="num">
                           <button className="small-btn" onClick={() => onLog(d)}>
-                            Log service…
+                            {t("Log service…")}
                           </button>
                         </td>
                       )}
@@ -1011,14 +995,14 @@ function Preventive({
               </table>
             )}
             <details>
-              <summary className="small">Plans ({plans.plans.length})</summary>
+              <summary className="small">{t("Plans ({count})", { count: plans.plans.length })}</summary>
               <table className="data-table pt-tables">
                 <thead>
                   <tr>
-                    <th>Plan</th>
-                    <th>Applies to</th>
-                    <th>Category</th>
-                    <th>Every</th>
+                    <th>{t("Plan")}</th>
+                    <th>{t("Applies to")}</th>
+                    <th>{t("Category")}</th>
+                    <th>{t("Every")}</th>
                     {canEdit && <th />}
                   </tr>
                 </thead>
@@ -1030,18 +1014,18 @@ function Preventive({
                         {!p.active && " (paused)"}
                         {p.notes && <div className="muted small">{p.notes}</div>}
                       </td>
-                      <td>{p.model_id ? (options.models.find((m) => m.model_id === p.model_id)?.label ?? p.model_id) : "All buses"}</td>
+                      <td>{p.model_id ? (options.models.find((m) => m.model_id === p.model_id)?.label ?? p.model_id) : t("All buses")}</td>
                       <td>{catLabel.get(p.category) ?? p.category}</td>
-                      <td>{[p.interval_km && `${formatInteger(p.interval_km)} km`, p.interval_days && `${p.interval_days} days`].filter(Boolean).join(" or ")}</td>
+                      <td>{[p.interval_km && t("{n} km", { n: formatInteger(p.interval_km) }), p.interval_days && t("{n} days", { n: p.interval_days })].filter(Boolean).join(t(" or "))}</td>
                       {canEdit && (
                         <td className="num">
                           <div className="row">
                             <button className="small-btn" onClick={() => void act(() => api.ptSetMaintPlanActive(p.plan_id, !p.active))}>
-                              {p.active ? "Pause" : "Resume"}
+                              {p.active ? t("Pause") : t("Resume")}
                             </button>
                             {canRemove && (
-                              <button className="small-btn danger" onClick={() => window.confirm(`Delete plan "${p.name}"?`) && void act(() => api.ptDeleteMaintPlan(p.plan_id))}>
-                                Delete
+                              <button className="small-btn danger" onClick={() => window.confirm(t("Delete plan \"{name}\"?", { name: p.name })) && void act(() => api.ptDeleteMaintPlan(p.plan_id))}>
+                                {t("Delete")}
                               </button>
                             )}
                           </div>
@@ -1069,7 +1053,7 @@ function Preventive({
           ) : (
             <div>
               <button className="small-btn" onClick={() => setAdding(true)}>
-                Add plan…
+                {t("Add plan…")}
               </button>
             </div>
           ))}
@@ -1106,11 +1090,11 @@ function AddPlan({
     >
       <div className="row wrap">
         <label className="field inline grow">
-          <span>Plan name</span>
-          <input value={f.name} onChange={set("name")} required placeholder="e.g. A-service, HV battery check" />
+          <span>{t("Plan name")}</span>
+          <input value={f.name} onChange={set("name")} required placeholder={t("e.g. A-service, HV battery check")} />
         </label>
         <label className="field inline">
-          <span>Category</span>
+          <span>{t("Category")}</span>
           <select value={f.category} onChange={set("category")}>
             {options.categories.map((c) => (
               <option key={c.code} value={c.code}>
@@ -1120,9 +1104,9 @@ function AddPlan({
           </select>
         </label>
         <label className="field inline">
-          <span>Applies to</span>
+          <span>{t("Applies to")}</span>
           <select value={f.model_id} onChange={set("model_id")}>
-            <option value="">All buses</option>
+            <option value="">{t("All buses")}</option>
             {options.models.map((m) => (
               <option key={m.model_id} value={m.model_id}>
                 {m.label}
@@ -1133,22 +1117,22 @@ function AddPlan({
       </div>
       <div className="row wrap">
         <label className="field inline">
-          <span>Every (km)</span>
+          <span>{t("Every (km)")}</span>
           <input type="number" min="1" value={f.interval_km} onChange={set("interval_km")} />
         </label>
         <label className="field inline">
-          <span>and/or every (days)</span>
+          <span>{t("and/or every (days)")}</span>
           <input type="number" min="1" value={f.interval_days} onChange={set("interval_days")} />
         </label>
         <label className="field inline grow">
-          <span>Notes</span>
+          <span>{t("Notes")}</span>
           <input value={f.notes} onChange={set("notes")} />
         </label>
         <button className="primary align-end" type="submit" disabled={!f.interval_km && !f.interval_days}>
-          Add plan
+          {t("Add plan")}
         </button>
         <button type="button" className="align-end" onClick={onCancel}>
-          Cancel
+          {t("Cancel")}
         </button>
       </div>
     </form>
