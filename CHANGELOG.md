@@ -11,6 +11,10 @@ Unreleased to the version and date, and bump the app version in
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-10-19
+
+The app in English or Chinese, translation into any language, and automatic updates.
+
 ### Added
 - **English / 简体中文** (`lib/i18n.ts`, `lib/i18n/zh.ts`; server `I18n`, `src/i18n/zh.php`; migration
   `014_user_language.sql`): the whole app, including the server's messages, switches between English and Simplified
