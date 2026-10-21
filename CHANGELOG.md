@@ -12,6 +12,11 @@ release, rename Unreleased to the version and date, add the version's compare li
 
 ## [Unreleased]
 
+## [0.4.3] - 2026-10-21
+
+Recordings and meetings survive crashes and keep going while you use other pages; the usage ball and pet fit the
+screen.
+
 ### Added
 - **The usage ball and desktop pet fit the screen** (`lib/companionSize.ts`, `screens.rs`): they take the same share
   of whatever screen they're on as on a 27" 1440p monitor, so they're smaller on a laptop, but never under 2 cm (the
@@ -322,7 +327,8 @@ Initial server scaffold.
 - Anthropic model prices seeded.
 - Setup, production and API documentation in `README.md`.
 
-[Unreleased]: https://github.com/chrisred66/My-Assistant/compare/v0.4.2...HEAD
+[Unreleased]: https://github.com/chrisred66/My-Assistant/compare/v0.4.3...HEAD
+[0.4.3]: https://github.com/chrisred66/My-Assistant/compare/v0.4.2...v0.4.3
 [0.4.2]: https://github.com/chrisred66/My-Assistant/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/chrisred66/My-Assistant/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/chrisred66/My-Assistant/compare/v0.3.0...v0.4.0
