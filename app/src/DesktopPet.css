@@ -285,3 +285,15 @@ html.pet-window #root {
   font: inherit;
   cursor: pointer;
 }
+.pet-message {
+  gap: 3px;
+  cursor: pointer;
+}
+.pet-message-text {
+  font-size: 12px;
+  text-align: center;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 150px;
+  overflow-y: auto;
+}

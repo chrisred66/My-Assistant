@@ -123,6 +123,14 @@ fn pet_skin_clear(app: tauri::AppHandle, mood: Option<String>) -> Result<(), Str
     pet_skin::clear(&app, mood.as_deref())
 }
 
+mod pet_inbox;
+
+/// Messages other programs on this PC left for the pet (see pet_inbox.rs), oldest first.
+#[tauri::command]
+fn pet_inbox_take(app: tauri::AppHandle) -> Result<Vec<pet_inbox::Message>, String> {
+    pet_inbox::take(&app)
+}
+
 mod system_audio;
 
 /// Meeting mode: start sending what an output device plays (16 kHz mono PCM blocks) to `on_audio`. Returns the rate.
@@ -226,6 +234,7 @@ pub fn run() {
             pet_skin_set_credit,
             foreground_app,
             pet_watch_repos,
+            pet_inbox_take,
             save_file,
             set_recording_active,
             quit_app,

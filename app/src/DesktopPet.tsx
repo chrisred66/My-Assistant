@@ -7,6 +7,8 @@
 //   stay here / swim around, or put it away.
 // - While you browse the web and no tokens have been used for a few minutes, it plays with the usage ball: swims
 //   behind it and pushes it, and the ball rolls. Pushes go away from the cursor, and stop if the cursor comes near.
+// - Says what other programs on this PC tell it: files dropped in its inbox folder (src-tauri/src/pet_inbox.rs), one
+//   bubble at a time until clicked.
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { emit, listen } from "@tauri-apps/api/event";
@@ -27,6 +29,7 @@ import { BASE, useCompanionSize } from "./lib/companionSize";
 import "./DesktopPet.css";
 
 const POLL_MS = 30_000;
+const INBOX_MS = 1_000;
 const EAT_MS = 4_500;
 const EAT_EVERY_MS = 3 * 60_000; // token use seen by the 30 s check eats at most this often (AI jobs finishing always do)
 const SPEED = 70; // logical px per second while swimming
@@ -51,6 +54,11 @@ const AI_KINDS: ActivityKind[] = ["transcribing", "translating", "learning", "pl
 
 type Today = Partial<Record<UsageSource, InOut>>;
 
+interface InboxMessage {
+  text: string;
+  from: string | null;
+}
+
 export default function DesktopPet() {
   const [facing, setFacing] = useState<1 | -1>(1);
   const [moving, setMoving] = useState(false);
@@ -59,7 +67,8 @@ export default function DesktopPet() {
   const [held, setHeld] = useState(false);
   const [activities, setActivities] = useState<Activity[]>([]);
   const [today, setToday] = useState<Today | null>(null);
-  const [bubble, setBubble] = useState<"usage" | "menu" | "news" | null>(null);
+  const [bubble, setBubble] = useState<"usage" | "menu" | "news" | "message" | null>(null);
+  const [inbox, setInbox] = useState<InboxMessage[]>([]); // waiting to be said, oldest first
   const [stay, setStay] = useState(false);
   const [now, setNow] = useState(Date.now());
   const [skin, setSkin] = useState<PetSkin>({});
@@ -144,6 +153,29 @@ export default function DesktopPet() {
       void unlisten.then((f) => f()).catch(() => {});
     };
   }, []);
+
+  // Messages from other programs (pet_inbox.rs). Taken only while the pet is showing, so they wait while it's put away.
+  useEffect(() => {
+    let busy = false;
+    const timer = setInterval(() => {
+      if (busy) return;
+      busy = true;
+      void win
+        .isVisible()
+        .then((visible) => (visible ? invoke<InboxMessage[]>("pet_inbox_take") : []))
+        .then((got) => got.length && setInbox((q) => [...q, ...got]))
+        .catch(() => {})
+        .finally(() => (busy = false));
+    }, INBOX_MS);
+    return () => clearInterval(timer);
+  }, [win]);
+
+  // Say the next one once nothing else is showing.
+  useEffect(() => {
+    if (inbox.length === 0 || bubble !== null) return;
+    setBubble("message");
+    bump("click");
+  }, [inbox, bubble]);
 
   // Click-through: the window is bigger than the character (room for whole animations), so outside her body (and
   // her bubble) clicks go to whatever is behind. The cursor is checked a dozen times a second.
@@ -609,6 +641,20 @@ export default function DesktopPet() {
           >
             {t("Open Daily Feed")}
           </button>
+        </div>
+      )}
+      {bubble === "message" && inbox[0] && (
+        <div
+          className="pet-bubble pet-message"
+          onClick={() => {
+            setInbox((q) => q.slice(1));
+            setBubble(null);
+          }}
+          title={t("Click to close")}
+        >
+          {inbox[0].from && <span className="pet-sub">{inbox[0].from}</span>}
+          <span className="pet-message-text">{inbox[0].text}</span>
+          {inbox.length > 1 && <span className="pet-sub">{t("{n} more", { n: inbox.length - 1 })}</span>}
         </div>
       )}
       {bubble === "menu" && (

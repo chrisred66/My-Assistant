@@ -12,6 +12,16 @@ release, rename Unreleased to the version and date, add the version's compare li
 
 ## [Unreleased]
 
+### Added
+- **Messages to the desktop pet from other programs on this PC** (`pet_inbox.rs`; README → Messages to the desktop
+  pet): a `.txt` or `.json` file dropped in `%APPDATA%\com.chris.chrismanager\pet-inbox` is shown in the pet's bubble
+  until clicked, oldest first, then deleted. No network or key; messages wait while the pet is put away.
+
+### Changed
+- **New logo**: a blue "A" for the app icon (Windows, the installer and Android, where it's an adaptive icon on white)
+  and in the app, in the sidebar, on the sign-in screen and as the window's favicon (`public/logo.png`; app README →
+  App icon).
+
 ## [0.4.3] - 2026-10-21
 
 Recordings and meetings survive crashes and keep going while you use other pages; the usage ball and pet fit the

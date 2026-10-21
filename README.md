@@ -292,6 +292,23 @@ $h = @{ Authorization = "Bearer $($login.token)" }
 Invoke-RestMethod "$base/usage/summary?group=model" -Headers $h
 ```
 
+## Messages to the desktop pet
+
+Other programs on the same PC can make the pet say something by dropping a file in its inbox,
+`%APPDATA%\com.chris.chrismanager\pet-inbox` (no network, no API key). A `.txt` file is the message; a `.json` file is
+`{"text": "...", "from": "..."}`, with `from` shown above the text. The pet shows each one in a bubble until it's
+clicked, oldest first, and deletes the file; while the pet is put away (or the app is closed) messages wait. Text over
+500 characters is cut; a file that isn't a message is renamed to `.bad`.
+
+```powershell
+$inbox = "$env:APPDATA\com.chris.chrismanager\pet-inbox"
+New-Item -ItemType Directory -Force $inbox | Out-Null
+@{ text = "Build finished"; from = "CI" } | ConvertTo-Json | Set-Content -Encoding utf8 "$inbox\build-$(Get-Date -Format yyyyMMddHHmmssfff).json"
+```
+
+Give each file a new name (a timestamp works), so two messages can't overwrite each other, and write it in one go:
+files are read once they're half a second old.
+
 ## Credits and sources
 
 The desktop pet can show third-party characters. They are **not stored in this repository**: they're installed on

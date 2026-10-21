@@ -226,7 +226,10 @@ export default function App() {
       </header>
       {navOpen && <div className="nav-scrim" onClick={() => setNavOpen(false)} aria-hidden />}
       <nav id="main-nav" className={`sidebar${navOpen ? " open" : ""}`} aria-label={t("Main")}>
-        <div className="brand">{t(APP_NAME)}</div>
+        <div className="brand">
+          <img className="brand-logo" src="/logo.png" alt="" />
+          {t(APP_NAME)}
+        </div>
         {NAV.filter((item) => item.visible(session.user)).map((item) => (
           <button
             key={item.id}

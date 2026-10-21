@@ -52,6 +52,7 @@ export default function Login({ settings, onSignedIn }: Props) {
   return (
     <div className="center-screen">
       <form className="card narrow stack" onSubmit={(e) => void submit(e)}>
+        <img className="login-logo" src="/logo.png" alt="" />
         <div className="row space-between wrap">
           <h1>{t("Sign in to My Assistant")}</h1>
           <LanguageSwitch />

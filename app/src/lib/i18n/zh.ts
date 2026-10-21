@@ -207,6 +207,8 @@ const zh: Record<string, string> = {
   "(loading days…)": "（加载日期…）",
   "Today's top stories on your topics": "今天你关注话题的头条新闻",
   "Your Daily Feed is ready": "你的每日简报已生成",
+  "Click to close": "点击关闭",
+  "{n} more": "还有 {n} 条",
   "Open Daily Feed": "打开每日简报",
   "Sources": "来源",
 

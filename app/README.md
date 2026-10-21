@@ -56,6 +56,14 @@ The default server address is set at build time in `app/.env.local` (git-ignored
    with the same one, so a new key would force everyone to uninstall the app and lose its data.
 4. Attach the installers and the APK to a GitHub release for the version's tag.
 
+## App icon
+
+The logo is `src-tauri/icons/logo-source.png` (1024 × 1024, transparent); `public/logo.png` is the copy the app shows
+in the sidebar, the sign-in screen and as the favicon. To change it, replace both and run
+`npx tauri icon src-tauri/icons/logo-source.png`, then delete `src-tauri/icons/ios` (no iOS app) and shrink the
+Android adaptive-icon foregrounds (`gen/android/.../mipmap-*/ic_launcher_foreground.png`) so the logo fits inside the
+middle 62% of each: `tauri icon` fills the whole canvas, and launchers crop it to a circle.
+
 ## How it talks to the server
 
 - API calls go through `@tauri-apps/plugin-http` (Rust side), so the PHP server needs no CORS headers. The allowed
