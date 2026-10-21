@@ -7,6 +7,7 @@ import { load } from "@tauri-apps/plugin-store";
 import { useSyncExternalStore } from "react";
 import { t } from "./i18n";
 import { isDesktop } from "./platform";
+import { endRecordingsFirst } from "./recordingBackup";
 
 const MANIFEST_URL = "https://github.com/chrisred66/My-Assistant/releases/latest/download/latest.json";
 export const RELEASES_URL = "https://github.com/chrisred66/My-Assistant/releases/latest";
@@ -126,6 +127,7 @@ export async function restartToUpdate(): Promise<void> {
   if (!pending) return;
   if (state.phase !== "ready") await download();
   if (state.phase !== "ready") return; // the download failed: the error is shown
+  if (!(await endRecordingsFirst())) return; // a recording in progress is saved before the restart
   set({ phase: "installing" });
   try {
     await pending.install();

@@ -4,12 +4,34 @@ All notable changes to My Assistant (formerly chrisManager). Newest first.
 Format based on [Keep a Changelog](https://keepachangelog.com/); versions follow [SemVer](https://semver.org/).
 
 When you change something, add a line under **Unreleased** in the right group
-(Added / Changed / Fixed / Removed / Security; Added is split by area). If it changes something
-already listed under Unreleased, update that entry instead of adding another. When you cut a release, rename
-Unreleased to the version and date, and bump the app version in
-`app/package.json`, `app/src-tauri/Cargo.toml` and `app/src-tauri/tauri.conf.json`.
+(Added / Changed / Removed / Fixed / Security; Added is split by area). If it changes something
+already listed under Unreleased, update that entry instead of adding another. Groups go in that order. When you cut a
+release, rename Unreleased to the version and date, add the version's compare link at the bottom (and move
+`[Unreleased]` on to the new tag), and bump the app version in `app/package.json`, `app/src-tauri/Cargo.toml` and
+`app/src-tauri/tauri.conf.json`.
 
 ## [Unreleased]
+
+### Added
+- **The usage ball and desktop pet fit the screen** (`lib/companionSize.ts`, `screens.rs`): they take the same share
+  of whatever screen they're on as on a 27" 1440p monitor, so they're smaller on a laptop, but never under 2 cm (the
+  monitor's physical size, read from Windows, says how big a pixel is). They resize when moved to another screen.
+  Settings has a size of your own for each (50–150%, per device).
+- **Recordings and meetings are safe from crashes** (`lib/recordingBackup.ts`):
+  - Every second of the audio is also kept on the device (IndexedDB) while recording, so a crash, a killed app or a
+    failed upload loses about a second at most. What's left behind is uploaded on the next sign-in (or **Refresh** on
+    Recordings) through `/live/{id}/finish`, Recordings says which recordings were recovered, and the copy is dropped
+    once the server has it.
+  - Closing the window mid-recording saves the recording before quitting (`set_recording_active` / `quit_app` in
+    `lib.rs`; a second close quits at once). Signing out, switching account or role, and **Update and restart** ask
+    first, then stop and save it.
+  - The list shows **Recording now** for a recording in progress instead of "Not finished".
+
+### Fixed
+- **Other pages no longer cut off a recording or meeting**: General Tool stays open in the background once visited,
+  so recording and live transcription carry on while you use other pages, minimize the app or work in another app (a
+  held Web Lock keeps the page from being frozen). On Android the system may still stop the microphone while the app
+  is in the background.
 
 ## [0.4.2] - 2026-10-19
 
@@ -93,10 +115,6 @@ translation, and the Android app.
 - **Sign-in lockout**: 5 failed attempts for a login (or 20 from one IP) in 15 minutes lock it for 15 minutes; a login
   that doesn't exist now takes as long to refuse as a wrong password.
 
-### Fixed
-- Daily Feed: the 8:00 job and the app's catch-up could build the same feed at once (paying twice; the second
-  failed on a duplicate entry). Builds now take a per-user lock (`GET_LOCK`); a second caller returns at once.
-
 ### Changed
 - **Translation goes to DeepSeek** (`TRANSLATE_PROVIDER=deepseek`; about a fortieth of Claude Opus's cost per word).
   Only the Super Admin can choose another model for a request (a `claude-`, `gpt-` or `deepseek-` model goes to its own
@@ -106,6 +124,10 @@ translation, and the Android app.
   or Tailscale can't fake an IP to get round the sign-in lockout.
 - **Admin** no longer has every PT module: Admins manage accounts below Admin and use the General Tool as Paid, and
   see PT only with a PT role of their own (which can now be set for Admins in Settings → Users).
+
+### Fixed
+- Daily Feed: the 8:00 job and the app's catch-up could build the same feed at once (paying twice; the second
+  failed on a duplicate entry). Builds now take a per-user lock (`GET_LOCK`); a second caller returns at once.
 
 ## [0.3.0] - 2026-10-13
 
@@ -281,8 +303,8 @@ First desktop client.
 ### Known limitations
 - Transcription needs `OPENAI_API_KEY` in `server/.env`; uploading without transcription works without it.
 - No data-analysis screen yet: the `datasets` table exists, but the server has no endpoints for it.
-- Recorded audio can't be played back from the server (no download endpoint).
-- Android/iOS targets not set up yet.
+- Recorded audio can't be played back from the server (no download endpoint; **Save audio…** since 0.4.0).
+- Android/iOS targets not set up yet (the Android app since 0.4.0).
 
 ## [0.1.0] - 2026-10-11
 
@@ -299,3 +321,9 @@ Initial server scaffold.
 - Database migration `001_init.sql`, `bin/migrate.php`, `bin/create-user.php`.
 - Anthropic model prices seeded.
 - Setup, production and API documentation in `README.md`.
+
+[Unreleased]: https://github.com/chrisred66/My-Assistant/compare/v0.4.2...HEAD
+[0.4.2]: https://github.com/chrisred66/My-Assistant/compare/v0.4.1...v0.4.2
+[0.4.1]: https://github.com/chrisred66/My-Assistant/compare/v0.4.0...v0.4.1
+[0.4.0]: https://github.com/chrisred66/My-Assistant/compare/v0.3.0...v0.4.0
+[0.3.0]: https://github.com/chrisred66/My-Assistant/releases/tag/v0.3.0

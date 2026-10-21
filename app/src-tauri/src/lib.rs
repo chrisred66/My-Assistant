@@ -78,6 +78,7 @@ async fn claude_code_usage(days: Option<u64>) -> Result<Vec<claude_code::Entry>,
 
 mod fullscreen;
 mod ui_language;
+mod screens;
 mod signals;
 
 /// The git repositories whose commits and reverts the desktop pet reacts to.
@@ -145,6 +146,25 @@ fn system_audio_stop(state: tauri::State<system_audio::SystemAudio>) {
     system_audio::stop(&state);
 }
 
+/// Set by the frontend while a live recording or meeting is running (lib/recordingBackup.ts). Closing the main window
+/// then waits: the frontend gets "close-requested", saves the recording and calls `quit_app`. A second close quits at
+/// once (the recording's backup is uploaded on the next start).
+#[derive(Default)]
+struct Recording {
+    active: std::sync::atomic::AtomicBool,
+    closing: std::sync::atomic::AtomicBool,
+}
+
+#[tauri::command]
+fn set_recording_active(state: tauri::State<Recording>, active: bool) {
+    state.active.store(active, std::sync::atomic::Ordering::SeqCst);
+}
+
+#[tauri::command]
+fn quit_app(app: tauri::AppHandle) {
+    app.exit(0);
+}
+
 /// Saves a downloaded file (e.g. a recording's audio) where the person chose in the save dialog.
 #[tauri::command]
 fn save_file(path: String, data: String) -> Result<(), String> {
@@ -163,6 +183,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_process::init())
         .manage(system_audio::SystemAudio::default())
+        .manage(Recording::default())
         .setup(|app| {
             // The windows are created here rather than by Tauri ("create": false in tauri.conf.json), so the WebView's
             // own language (--lang) can follow the account's language saved by the frontend.
@@ -206,14 +227,25 @@ pub fn run() {
             foreground_app,
             pet_watch_repos,
             save_file,
-            ui_language::set_ui_language
+            set_recording_active,
+            quit_app,
+            ui_language::set_ui_language,
+            screens::screen_sizes
         ])
         // Closing the main window quits the app, including the desktop usage ball (otherwise the hidden or floating
-        // ball window would keep the app running with no way back to the main window).
+        // ball window would keep the app running with no way back to the main window). While recording, the recording
+        // is saved first (see `Recording`).
         .on_window_event(|window, event| {
             if window.label() == "main" {
-                if let tauri::WindowEvent::CloseRequested { .. } = event {
-                    window.app_handle().exit(0);
+                if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                    use std::sync::atomic::Ordering::SeqCst;
+                    let rec = window.state::<Recording>();
+                    if rec.active.load(SeqCst) && !rec.closing.swap(true, SeqCst) {
+                        api.prevent_close();
+                        let _ = tauri::Emitter::emit_to(window, "main", "close-requested", ());
+                    } else {
+                        window.app_handle().exit(0);
+                    }
                 }
             }
         })

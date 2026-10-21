@@ -8,6 +8,7 @@ import { isMobile } from "../lib/platform";
 import { startActivity } from "../lib/activity";
 import { errorMessage, formatDuration, toSqlDateTime } from "../lib/format";
 import { LiveRecorder, outputDevices, type LiveChunk } from "../lib/liveRecorder";
+import { AudioBackup, audioFileName, discardBackup, markInProgress, recoverRecordings } from "../lib/recordingBackup";
 import { t } from "../lib/i18n";
 import TargetPicker from "../components/TargetPicker";
 import { targetFor } from "../lib/targetLanguage";
@@ -54,6 +55,10 @@ export default function MeetingPanel({ onSaved }: { onSaved: (recordingId: numbe
 
   const recorderRef = useRef<LiveRecorder | null>(null);
   const meetingRef = useRef<number | null>(null);
+  const backupRef = useRef<AudioBackup | null>(null);
+  const doneRef = useRef<(() => void) | null>(null); // ends "in progress" (lib/recordingBackup.ts)
+  const stopRef = useRef<() => Promise<void>>(async () => {});
+  const savingRef = useRef<Promise<void> | null>(null);
   const queueRef = useRef<LiveChunk[]>([]);
   const wavsRef = useRef(new Map<number, LiveChunk>()); // kept for retries
   const busyRef = useRef(false);
@@ -135,19 +140,23 @@ export default function MeetingPanel({ onSaved }: { onSaved: (recordingId: numbe
     wavsRef.current.clear();
     queueRef.current = [];
     setPhase("starting");
-    const recorder = new LiveRecorder({
-      ...CHUNKS,
-      onChunk: enqueue,
-      onLevel: setLevel,
-      systemAudio: source === "online",
-      systemDevice: devices.some((d) => d.name === device) ? device : null,
-      mic: source === "in-person" || withMic,
-    });
+    let recorder: LiveRecorder | null = null;
     try {
       const session = await api.meetingStart(title.trim() || undefined, toSqlDateTime(new Date()));
       meetingRef.current = session.recording_id;
+      backupRef.current = new AudioBackup(session.recording_id, "meeting");
+      recorder = new LiveRecorder({
+        ...CHUNKS,
+        onChunk: enqueue,
+        onLevel: setLevel,
+        systemAudio: source === "online",
+        systemDevice: devices.some((d) => d.name === device) ? device : null,
+        mic: source === "in-person" || withMic,
+        backup: backupRef.current,
+      });
       await recorder.start();
     } catch (e) {
+      void recorder?.cancel();
       setPhase("idle");
       const message = errorMessage(e);
       setError(
@@ -160,35 +169,44 @@ export default function MeetingPanel({ onSaved }: { onSaved: (recordingId: numbe
       return;
     }
     recorderRef.current = recorder;
+    doneRef.current = markInProgress(meetingRef.current!, () => stopRef.current());
     const startedAt = Date.now();
     setElapsed(0);
     timerRef.current = window.setInterval(() => setElapsed((Date.now() - startedAt) / 1000), 250);
     setPhase("recording");
   }
 
-  async function stop() {
+  async function save() {
     const recorder = recorderRef.current;
     const id = meetingRef.current;
     if (!recorder || id === null) return;
+    recorderRef.current = null; // stopping: a second End (or leaving the page) leaves it to this one
     if (timerRef.current !== null) window.clearInterval(timerRef.current);
     setPhase("finishing");
     setLevel(0);
     try {
       const recording = await recorder.stop(); // emits the last chunk
       await whenIdle();
-      const ext = recording.mimeType.includes("ogg") ? "ogg" : recording.mimeType.includes("mp4") ? "m4a" : "webm";
-      const stamp = toSqlDateTime(new Date()).replace(/[: ]/g, "-");
-      const done = await api.liveFinish(id, recording.audio, `meeting-${stamp}.${ext}`, recording.durationMs / 1000);
+      const done = await api.liveFinish(id, recording.audio, audioFileName("meeting", recording.mimeType), recording.durationMs / 1000);
+      void discardBackup(id);
       setSavedId(id);
       setTitle("");
       onSaved(id, done.audio_removed);
     } catch (e) {
-      setError(t("The meeting couldn't be saved: {error}", { error: errorMessage(e) }));
+      setError(
+        backupRef.current?.intact
+          ? t("The meeting couldn't be uploaded ({error}). A copy is kept on this device and is uploaded automatically later.", { error: errorMessage(e) })
+          : t("The meeting couldn't be saved: {error}", { error: errorMessage(e) }),
+      );
     } finally {
-      recorderRef.current = null;
+      doneRef.current?.();
+      doneRef.current = null;
       setPhase("idle");
     }
   }
+  // One save at a time: Stop and "save it first" (lib/recordingBackup.ts) share it.
+  const stop = () => (savingRef.current ??= save().finally(() => (savingRef.current = null)));
+  stopRef.current = stop;
 
   function retry(seq: number) {
     const chunk = wavsRef.current.get(seq);
@@ -211,10 +229,17 @@ export default function MeetingPanel({ onSaved }: { onSaved: (recordingId: numbe
     if (phase === "finishing") return startActivity("saving", t("Saving meeting"));
   }, [phase]);
 
+  // A last resort, as in Recordings' LivePanel: the page normally stays mounted while recording.
   useEffect(
     () => () => {
       if (timerRef.current !== null) window.clearInterval(timerRef.current);
-      void recorderRef.current?.cancel();
+      const recorder = recorderRef.current;
+      if (!recorder) return;
+      recorderRef.current = null;
+      void recorder.cancel().then(() => {
+        doneRef.current?.();
+        void recoverRecordings();
+      });
     },
     [],
   );

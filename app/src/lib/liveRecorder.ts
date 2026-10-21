@@ -2,7 +2,9 @@
 // cuts the raw audio into short self-contained WAV chunks at natural pauses for live transcription.
 // Meeting mode can add what the computer is playing (the other people in an online meeting), captured natively
 // (Rust command system_audio_start, WASAPI loopback) and mixed with the microphone; both outputs use the mix.
+// The compressed copy is also backed up on this device as it's recorded (lib/recordingBackup.ts).
 import { Channel, invoke } from "@tauri-apps/api/core";
+import type { AudioBackup } from "./recordingBackup";
 import { t } from "./i18n";
 
 export interface LiveChunk {
@@ -21,6 +23,7 @@ export interface LiveRecorderOptions {
   mic?: boolean; // record the microphone (default true)
   systemAudio?: boolean; // also record what the computer plays (Windows desktop app only)
   systemDevice?: string | null; // which output device to capture; null/undefined: the default
+  backup?: AudioBackup; // gets each second of the compressed recording, for recovery after a crash
 }
 
 /** Output devices the computer's audio can be captured from (empty outside the Windows desktop app). */
@@ -99,6 +102,7 @@ export class LiveRecorder {
   private media: MediaRecorder | null = null;
   private mediaParts: Blob[] = [];
   private mediaType = "audio/webm";
+  private releaseLock: (() => void) | null = null;
 
   private sampleRate = 16000;
   private chunk: Float32Array[] = [];
@@ -169,9 +173,18 @@ export class LiveRecorder {
     this.mediaType = this.media.mimeType || mimeType || "audio/webm";
     this.mediaParts = [];
     this.media.ondataavailable = (e) => {
-      if (e.data.size > 0) this.mediaParts.push(e.data);
+      if (e.data.size === 0) return;
+      this.mediaParts.push(e.data);
+      this.opts.backup?.append(e.data, (this.totalSamples / this.sampleRate) * 1000);
     };
+    this.opts.backup?.begin(this.mediaType);
     this.media.start(1000);
+
+    // A held Web Lock keeps the page from being frozen while the app is in the background (minimized, another app
+    // in front), so recording and transcription carry on.
+    navigator.locks
+      ?.request(`recording-${Date.now()}-${Math.random()}`, () => new Promise<void>((resolve) => (this.releaseLock = resolve)))
+      .catch(() => {});
 
     if (worklets) {
       const tap = new AudioWorkletNode(this.ctx, "tap");
@@ -195,7 +208,19 @@ export class LiveRecorder {
   async stop(): Promise<LiveRecording> {
     this.cut(true);
     const durationMs = (this.totalSamples / this.sampleRate) * 1000;
+    const audio = await this.close();
+    return { audio, mimeType: this.mediaType, durationMs };
+  }
 
+  /** Stops without emitting a last chunk or returning the audio; the backup keeps everything up to here. */
+  async cancel(): Promise<void> {
+    this.chunk = [];
+    this.chunkSamples = 0;
+    await this.close();
+  }
+
+  /** Stops every source; resolves with the whole recording once its last piece is in (and passed to the backup). */
+  private async close(): Promise<Blob> {
     const audio = await new Promise<Blob>((resolve) => {
       if (!this.media || this.media.state === "inactive") {
         resolve(new Blob(this.mediaParts, { type: this.mediaType }));
@@ -208,20 +233,12 @@ export class LiveRecorder {
     await this.stopSystem();
     this.stream?.getTracks().forEach((t) => t.stop());
     await this.ctx?.close();
+    this.releaseLock?.();
+    this.releaseLock = null;
     this.stream = null;
     this.ctx = null;
     this.media = null;
-    return { audio, mimeType: this.mediaType, durationMs };
-  }
-
-  /** Abandons the recording without emitting anything. */
-  async cancel(): Promise<void> {
-    this.chunk = [];
-    this.chunkSamples = 0;
-    if (this.media && this.media.state !== "inactive") this.media.stop();
-    await this.stopSystem();
-    this.stream?.getTracks().forEach((t) => t.stop());
-    await this.ctx?.close();
+    return audio;
   }
 
   private onSamples(samples: Float32Array) {

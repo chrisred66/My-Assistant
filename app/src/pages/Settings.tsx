@@ -6,6 +6,7 @@ import { ballEnabled, setBallEnabled } from "../lib/ball";
 import { clearSkin, loadPack, loadSkin, petEnabled, petLook, saveSkinImage, setPetEnabled, setPetLook, setSkinCredit, setSkinFacing, skinCredit, skinFacing, SKIN_MOODS, type LoadedPack, type PetLook, type PetSkin, type SkinMood } from "../lib/pet";
 import ThemeSwitch from "../components/ThemeSwitch";
 import LanguageSwitch from "../components/LanguageSwitch";
+import { getCompanionPercent, setCompanionPercent, type Companion } from "../lib/companionSize";
 import { checkForUpdates, currentVersion, getAutoUpdate, RELEASES_URL, setAutoUpdate, useUpdates } from "../lib/updates";
 import { isDesktop } from "../lib/platform";
 import { errorMessage, formatDateTime } from "../lib/format";
@@ -149,6 +150,7 @@ function UsageBallSetting() {
       <p className="muted small">
         {t("It stays on top of other windows and switches provider every 6 seconds, showing tokens used today and this month (refreshed every 2 minutes). Drag it anywhere; double-click it to bring this window back. It closes when you quit the app.")}
       </p>
+      <CompanionSizeSetting kind="ball" />
       <ErrorText message={error} />
     </div>
   );
@@ -182,10 +184,40 @@ function PetSetting() {
       <p className="muted small">
         {t("It swims around the screen and eats a bowl of rice whenever tokens are used, getting rounder through the day. It shows what you're doing (headphones while you record), sleeps late at night and gets hungry at meal times. Click it for today's tokens, stroke it to make it happy, double-click to open this window, drag it anywhere, right-click for Stay here / Swim around. It hides while another app is full screen.")}
       </p>
+      <CompanionSizeSetting kind="pet" />
       <ErrorText message={error} />
       <PetLookSetting />
       <PetSkinSetting />
     </div>
+  );
+}
+
+/** The ball's or pet's size: sized to the screen it's on, times your own size (Settings, this device). */
+function CompanionSizeSetting({ kind }: { kind: Companion }) {
+  const [percent, setPercent] = useState<number | null>(null);
+  useEffect(() => {
+    void getCompanionPercent(kind).then(setPercent);
+  }, [kind]);
+  if (percent === null) return null;
+  return (
+    <label className="field">
+      <span>{t("Size: {percent}%", { percent })}</span>
+      <input
+        type="range"
+        min={50}
+        max={150}
+        step={10}
+        value={percent}
+        onChange={(e) => {
+          const next = Number(e.target.value);
+          setPercent(next);
+          void setCompanionPercent(kind, next);
+        }}
+      />
+      <span className="muted small">
+        {t("At 100% it takes the same share of whatever screen it's on (smaller on a laptop than on a big monitor), and never less than 2 cm. Remembered on this device.")}
+      </span>
+    </label>
   );
 }
 

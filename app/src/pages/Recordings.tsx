@@ -15,6 +15,16 @@ import {
   toSqlDateTime,
 } from "../lib/format";
 import { LiveRecorder, type LiveChunk } from "../lib/liveRecorder";
+import {
+  AudioBackup,
+  audioFileName,
+  discardBackup,
+  isRecordingNow,
+  markInProgress,
+  onRecovered,
+  recoverRecordings,
+  takeRecovered,
+} from "../lib/recordingBackup";
 import { startActivity, track } from "../lib/activity";
 import { isDesktop } from "../lib/platform";
 import { t, tc, tn } from "../lib/i18n";
@@ -35,6 +45,7 @@ export default function Recordings({ canTranscribe = true }: { canTranscribe?: b
   const [expanded, setExpanded] = useState<number | null>(null);
   const [storage, setStorage] = useState<StorageInfo | null>(null);
   const [removed, setRemoved] = useState<RemovedAudio[]>([]);
+  const [recovered, setRecovered] = useState<number[]>(takeRecovered);
 
   const refresh = useCallback(async () => {
     setListError(null);
@@ -50,6 +61,16 @@ export default function Recordings({ canTranscribe = true }: { canTranscribe?: b
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  // Unfinished recordings uploaded from this device's backup (lib/recordingBackup.ts).
+  useEffect(
+    () =>
+      onRecovered(() => {
+        setRecovered((r) => [...r, ...takeRecovered()]);
+        void refresh();
+      }),
+    [refresh],
+  );
 
   const saved = useCallback(
     (id: number, removedAudio?: RemovedAudio[]) => {
@@ -74,11 +95,27 @@ export default function Recordings({ canTranscribe = true }: { canTranscribe?: b
 
       <div className="row space-between">
         <h2>{t("Saved recordings")}</h2>
-        <button className="small-btn" onClick={() => void refresh()}>
+        <button
+          className="small-btn"
+          onClick={() => {
+            void recoverRecordings();
+            void refresh();
+          }}
+        >
           {t("Refresh")}
         </button>
       </div>
       {storage && <StorageBar storage={storage} />}
+      {recovered.length > 0 && (
+        <div className="adjusted-note small">
+          {tn(recovered.length, "Recovered an unfinished recording (#{ids}): its audio was uploaded from this device's backup.", "Recovered {n} unfinished recordings (#{ids}): their audio was uploaded from this device's backup.", {
+            ids: recovered.join(", #"),
+          })}{" "}
+          <button className="link-btn" onClick={() => setRecovered([])}>
+            {t("OK")}
+          </button>
+        </div>
+      )}
       {removed.length > 0 && (
         <div className="adjusted-note small">
           {tn(removed.length, "To stay within your 125 MB, the audio of your oldest recording was removed: {names}. Its transcript is kept.", "To stay within your 125 MB, the audio of your {n} oldest recordings was removed: {names}. Their transcripts are kept.", {
@@ -158,6 +195,7 @@ function StorageBar({ storage }: { storage: StorageInfo }) {
 }
 
 function status(r: Recording): string {
+  if (isRecordingNow(r.id)) return t("Recording now");
   if (r.audio_removed_at) return r.source_text ? t("Transcript (audio removed)") : t("Audio removed");
   if (!r.original_name && r.size_bytes === 0) return t("Not finished");
   if (!r.source_text) return t("Audio only");
@@ -191,6 +229,10 @@ function LivePanel({ onSaved, canTranscribe }: { onSaved: (recordingId: number, 
 
   const recorderRef = useRef<LiveRecorder | null>(null);
   const recordingIdRef = useRef<number | null>(null);
+  const backupRef = useRef<AudioBackup | null>(null);
+  const doneRef = useRef<(() => void) | null>(null); // ends "in progress" (lib/recordingBackup.ts)
+  const stopRef = useRef<() => Promise<void>>(async () => {});
+  const savingRef = useRef<Promise<void> | null>(null);
   const queueRef = useRef<LiveChunk[]>([]);
   const chunksRef = useRef(new Map<number, LiveChunk>()); // kept for retries
   const inFlightRef = useRef(0);
@@ -258,13 +300,16 @@ function LivePanel({ onSaved, canTranscribe }: { onSaved: (recordingId: number, 
     lastTextRef.current = "";
     setPhase("starting");
 
-    // Free plan: chunks aren't sent (no transcription); the whole recording is still saved on Stop.
-    const recorder = new LiveRecorder({ onChunk: canTranscribe ? enqueue : () => {}, onLevel: setLevel });
+    let recorder: LiveRecorder | null = null;
     try {
       const session = await api.liveStart(title.trim() || undefined, toSqlDateTime(new Date()));
       recordingIdRef.current = session.recording_id;
+      backupRef.current = new AudioBackup(session.recording_id, "live");
+      // Free plan: chunks aren't sent (no transcription); the whole recording is still saved on Stop.
+      recorder = new LiveRecorder({ onChunk: canTranscribe ? enqueue : () => {}, onLevel: setLevel, backup: backupRef.current });
       await recorder.start();
     } catch (e) {
+      void recorder?.cancel();
       setPhase("idle");
       const message = errorMessage(e);
       setError(
@@ -275,35 +320,44 @@ function LivePanel({ onSaved, canTranscribe }: { onSaved: (recordingId: number, 
       return;
     }
     recorderRef.current = recorder;
+    doneRef.current = markInProgress(recordingIdRef.current!, () => stopRef.current());
     const startedAt = Date.now();
     setElapsed(0);
     timerRef.current = window.setInterval(() => setElapsed((Date.now() - startedAt) / 1000), 250);
     setPhase("recording");
   }
 
-  async function stop() {
+  async function save() {
     const recorder = recorderRef.current;
     const recordingId = recordingIdRef.current;
     if (!recorder || recordingId === null) return;
+    recorderRef.current = null; // stopping: a second Stop (or leaving the page) leaves it to this one
     if (timerRef.current !== null) window.clearInterval(timerRef.current);
     setPhase("finishing");
     setLevel(0);
     try {
       const recording = await recorder.stop(); // emits the last chunk
       await whenIdle();
-      const ext = recording.mimeType.includes("ogg") ? "ogg" : recording.mimeType.includes("mp4") ? "m4a" : "webm";
-      const stamp = toSqlDateTime(new Date()).replace(/[: ]/g, "-");
-      const done = await api.liveFinish(recordingId, recording.audio, `recording-${stamp}.${ext}`, recording.durationMs / 1000);
+      const done = await api.liveFinish(recordingId, recording.audio, audioFileName("live", recording.mimeType), recording.durationMs / 1000);
+      void discardBackup(recordingId);
       setSavedId(recordingId);
       setTitle("");
       onSaved(recordingId, done.audio_removed);
     } catch (e) {
-      setError(t("The recording couldn't be saved: {error}", { error: errorMessage(e) }));
+      setError(
+        backupRef.current?.intact
+          ? t("The recording couldn't be uploaded ({error}). A copy is kept on this device and is uploaded automatically later.", { error: errorMessage(e) })
+          : t("The recording couldn't be saved: {error}", { error: errorMessage(e) }),
+      );
     } finally {
-      recorderRef.current = null;
+      doneRef.current?.();
+      doneRef.current = null;
       setPhase("idle");
     }
   }
+  // One save at a time: Stop and "save it first" (lib/recordingBackup.ts) share it.
+  const stop = () => (savingRef.current ??= save().finally(() => (savingRef.current = null)));
+  stopRef.current = stop;
 
   function retry(seq: number) {
     const chunk = chunksRef.current.get(seq);
@@ -316,11 +370,18 @@ function LivePanel({ onSaved, canTranscribe }: { onSaved: (recordingId: number, 
     if (phase === "finishing") return startActivity("saving", t("Saving audio"));
   }, [phase]);
 
-  // Leaving the page mid-recording abandons it.
+  // The page stays mounted while you look elsewhere in the app (App.tsx), and signing out or switching account asks to
+  // save first, so this is a last resort: the recording stops and its backup is uploaded (or kept for the next start).
   useEffect(
     () => () => {
       if (timerRef.current !== null) window.clearInterval(timerRef.current);
-      void recorderRef.current?.cancel();
+      const recorder = recorderRef.current;
+      if (!recorder) return;
+      recorderRef.current = null;
+      void recorder.cancel().then(() => {
+        doneRef.current?.();
+        void recoverRecordings();
+      });
     },
     [],
   );

@@ -13,6 +13,7 @@ import { formatCompact, formatInteger, toIsoDate } from "./lib/format";
 import { getToken, loadSettings } from "./lib/settings";
 import "./UsageBall.css";
 import { t } from "./lib/i18n";
+import { useCompanionSize } from "./lib/companionSize";
 
 const ROTATE_MS = 6000;
 const REFRESH_MS = 2 * 60 * 1000;
@@ -84,6 +85,7 @@ function InOutRows({ v, inline = false }: { v: InOut | undefined; inline?: boole
 }
 
 export default function UsageBall() {
+  useCompanionSize("ball"); // sized to the screen and your setting
   const [totals, setTotals] = useState<Totals | null>(null);
   const [index, setIndex] = useState(0);
   const [problem, setProblem] = useState<string | null>(null);

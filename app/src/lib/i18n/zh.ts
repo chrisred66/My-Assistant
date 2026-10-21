@@ -798,6 +798,7 @@ const zh: Record<string, string> = {
   "No work orders {v}. Record repairs, inspections and services here; open ones always stay listed whatever the date range.": "没有工单{v}。在这里记录维修、检查和保养；未关闭的工单无论日期范围如何都会一直显示。",
   "Not allowed": "不允许",
   "Not finished": "未完成",
+  "Recording now": "正在录音",
   "Not set up. Add {key_setting} to server/.env.": "未设置。请在 server/.env 中添加 {key_setting}。",
   "Not transcribed yet.": "尚未转写。",
   "Offline": "离线",
@@ -917,8 +918,13 @@ const zh: Record<string, string> = {
   "The computer's audio can't be captured here ({message}). It works in the desktop app on Windows.": "这里无法录制电脑声音（{message}）。请在 Windows 桌面版应用中使用。",
   "The device your meeting app plays through (headsets often have a separate \"Chat\" one).": "会议软件用来播放声音的设备（耳机通常有一个单独的“Chat”设备）。",
   "The meeting couldn't be saved: {error}": "会议无法保存：{error}",
+  "The meeting couldn't be uploaded ({error}). A copy is kept on this device and is uploaded automatically later.": "会议上传失败（{error}）。本机保留了一份副本，稍后会自动上传。",
   "The new passwords don't match.": "两次输入的新密码不一致。",
   "The recording couldn't be saved: {error}": "录音无法保存：{error}",
+  "The recording couldn't be uploaded ({error}). A copy is kept on this device and is uploaded automatically later.": "录音上传失败（{error}）。本机保留了一份副本，稍后会自动上传。",
+  "Recovered an unfinished recording (#{ids}): its audio was uploaded from this device's backup.": "已找回一段未完成的录音（#{ids}）：音频已从本机备份上传。",
+  "Recovered {n} unfinished recordings (#{ids}): their audio was uploaded from this device's backup.": "已找回 {n} 段未完成的录音（#{ids}）：音频已从本机备份上传。",
+  "A recording is in progress. It will be stopped and saved first. Continue?": "正在录音。将先停止并保存录音，是否继续？",
   "The short ID is how the system refers to this manufacturer internally. It's the start of every model ID (for example {example}) and can't be changed later. Letters, digits and _ only, no spaces.":
     "短 ID 是系统内部对该车厂的称呼。它是每个车型 ID 的开头（例如 {example}），之后不能更改。只能使用字母、数字和 _，不能有空格。",
   "This bus, all drivers: {bus}": "这辆车，全部司机：{bus}",
@@ -1327,6 +1333,9 @@ const zh: Record<string, string> = {
     "说话时即可看到转写文字。其他语言的内容会随时翻译成你的语言（或你选择的语言）。停止后录音会被保存。",
   "Text in any language, translated by AI into yours (or the one you choose). Your translations are listed below the form, where you can edit or delete them.":
     "用 AI 把任意语言的文字翻译成你的语言（或你选择的语言）。你的翻译列在表单下方，可以编辑或删除。",
+  "Size: {percent}%": "大小：{percent}%",
+  "At 100% it takes the same share of whatever screen it's on (smaller on a laptop than on a big monitor), and never less than 2 cm. Remembered on this device.":
+    "100% 时它在任何屏幕上都占相同的比例（笔记本上比大显示器上小），且不小于 2 厘米。仅对这台设备有效。",
 };
 
 export default zh;

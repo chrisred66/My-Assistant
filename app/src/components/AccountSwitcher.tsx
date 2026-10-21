@@ -3,6 +3,7 @@
 // permissions. "Back to my account" drops it.
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api, type ManagedUser, type User } from "../lib/api";
+import { endRecordingsFirst } from "../lib/recordingBackup";
 import { errorMessage } from "../lib/format";
 import { t } from "../lib/i18n";
 
@@ -36,6 +37,7 @@ export function AccountSwitcher({ user, onSwitched }: { user: User; onSwitched: 
   }, [accounts, query, user.id]);
 
   async function choose(id: number | null) {
+    if (!(await endRecordingsFirst())) return; // a recording in progress belongs to the account it started in
     setBusy(true);
     setError(null);
     try {

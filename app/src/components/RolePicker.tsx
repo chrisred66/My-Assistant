@@ -2,6 +2,7 @@
 // switcher in the sidebar. The server applies the chosen role (POST /auth/role), so the app shows just what it allows.
 import { useState } from "react";
 import { api, type User, type UserRole } from "../lib/api";
+import { endRecordingsFirst } from "../lib/recordingBackup";
 import { errorMessage } from "../lib/format";
 import { ErrorText } from "./common";
 import { t } from "../lib/i18n";
@@ -103,8 +104,13 @@ export function RoleSwitcher({ user, onSwitched }: { user: User; onSwitched: (u:
         value={user.active_role ?? ""}
         disabled={busy}
         onChange={(e) => {
+          const role = e.target.value;
           setBusy(true);
-          api.setRole(e.target.value).then(onSwitched, () => {}).finally(() => setBusy(false));
+          // A recording in progress is saved first (switching reloads the pages).
+          endRecordingsFirst()
+            .then((go) => (go ? api.setRole(role).then(onSwitched) : undefined))
+            .catch(() => {})
+            .finally(() => setBusy(false));
         }}
       >
         {[...new Set(user.roles.map((r) => group(r.id)))].map((g) => (

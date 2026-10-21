@@ -23,6 +23,7 @@ import { formatCompact, toIsoDate } from "./lib/format";
 import { feedAnnounced, feedToAnnounce, loadPack, loadSkin, petLook, petStays, savePetPosition, setPetEnabled, setPetStays, skinFacing, type LoadedPack, type PetLook, type PetSkin } from "./lib/pet";
 import { getToken, loadSettings } from "./lib/settings";
 import { t } from "./lib/i18n";
+import { BASE, useCompanionSize } from "./lib/companionSize";
 import "./DesktopPet.css";
 
 const POLL_MS = 30_000;
@@ -72,6 +73,9 @@ export default function DesktopPet() {
   const [user, setUser] = useState({ idleMs: 0, typing: false });
 
   const win = getCurrentWindow();
+  // Sized to the screen and your setting (lib/companionSize.ts). Physical pixels per CSS pixel are then the window's
+  // physical width over its base width, which the hit test and roaming below use.
+  const zoom = useCompanionSize("pet");
   const lastTotal = useRef<number | null>(null);
   const restUntil = useRef(0);
   const hover = useRef(false);
@@ -146,11 +150,10 @@ export default function DesktopPet() {
   const hitBox = useRef({ w: 150, h: 128 });
   useEffect(() => {
     let ignoring: boolean | null = null;
-    let scale = 1;
-    void currentMonitor().then((m) => (scale = m?.scaleFactor || 1), () => {});
     const t = window.setInterval(async () => {
       try {
         const [c, p, s] = await Promise.all([cursorPosition(), win.outerPosition(), win.outerSize()]);
+        const scale = s.width / BASE.pet.w;
         const box = hitBox.current;
         const x = c.x - p.x;
         const y = c.y - p.y;
@@ -322,8 +325,8 @@ export default function DesktopPet() {
       const monitor = await currentMonitor().catch(() => null);
       if (!monitor || cancelled) return;
       const area = monitor.workArea ?? { position: monitor.position, size: monitor.size };
-      const scale = monitor.scaleFactor || 1;
       const size = await win.outerSize();
+      const scale = size.width / BASE.pet.w; // physical pixels per CSS pixel (screen scaling × size)
       let pos = await win.outerPosition();
       // The window is wider and taller than her: let its empty margins hang off-screen so she can reach the edges.
       const padX = Math.max(0, size.width / 2 - (hitBox.current.w / 2 + 10) * scale);
@@ -383,12 +386,13 @@ export default function DesktopPet() {
         if (!ball || !(await ball.isVisible().catch(() => false))) return;
         const bpos = await ball.outerPosition();
         const bsize = await ball.outerSize();
+        const bscale = bsize.width / BASE.ball.w; // the ball has its own size
         const avoid = AVOID * scale;
-        const r = BALL.r * scale;
-        let bx = bpos.x + BALL.cx * scale; // disc centre
-        let by = bpos.y + BALL.cy * scale;
-        const ballMin = { x: minX + BALL.cx * scale, y: minY + BALL.cy * scale };
-        const ballMax = { x: area.position.x + area.size.width - bsize.width + BALL.cx * scale, y: area.position.y + area.size.height - bsize.height + BALL.cy * scale };
+        const r = BALL.r * bscale;
+        let bx = bpos.x + BALL.cx * bscale; // disc centre
+        let by = bpos.y + BALL.cy * bscale;
+        const ballMin = { x: minX + BALL.cx * bscale, y: minY + BALL.cy * bscale };
+        const ballMax = { x: area.position.x + area.size.width - bsize.width + BALL.cx * bscale, y: area.position.y + area.size.height - bsize.height + BALL.cy * bscale };
         let cursor = await cursorPosition().catch(() => null);
         if (cursor && dist2(cursor.x, cursor.y, bx, by) < avoid) return; // you're near it: leave it alone
 
@@ -450,7 +454,7 @@ export default function DesktopPet() {
             by = ny;
             travelled += moved;
             angle += (moved / r) * (180 / Math.PI) * (dx >= 0 ? 1 : -1);
-            void ball.setPosition(new PhysicalPosition(Math.round(bx - BALL.cx * scale), Math.round(by - BALL.cy * scale)));
+            void ball.setPosition(new PhysicalPosition(Math.round(bx - BALL.cx * bscale), Math.round(by - BALL.cy * bscale)));
             void emit("ball-roll", { angle });
             // The pet keeps up while pushing, then slows down behind the rolling ball.
             if (contact) {
@@ -503,7 +507,7 @@ export default function DesktopPet() {
     };
     // mood changes only adjust speed; restarting the loop for them would make it stutter
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [canRoam]);
+  }, [canRoam, zoom]); // a new size: start again with the new measurements
 
   // ---- pointer: click, drag, petting ------------------------------------------------------------------------------
   function onPointerDown(e: React.PointerEvent) {

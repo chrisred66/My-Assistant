@@ -25,6 +25,7 @@ import { watchDailyFeed } from "./lib/feedNotify";
 import { isDesktop } from "./lib/platform";
 import { listen } from "@tauri-apps/api/event";
 import { serveActivityRequests } from "./lib/activity";
+import { endRecordingsFirst, saveRecordingsOnClose, setRecordingOwner } from "./lib/recordingBackup";
 import { getLang, setLang, t, useLang } from "./lib/i18n";
 
 const APP_NAME = "My Assistant";
@@ -49,12 +50,16 @@ type Session =
   | { state: "signedIn"; settings: Settings; user: User };
 
 serveActivityRequests(); // the desktop ball asks what's going on when it opens
+saveRecordingsOnClose(); // closing the window mid-recording saves it first
 
 export default function App() {
   const lang = useLang(); // re-render everything when the language changes
   const [session, setSession] = useState<Session>({ state: "loading" });
   const [page, setPage] = useState<Page>("pt");
   const [languageTab, setLanguageTab] = useState<LanguageTab>("recordings");
+  // General Tool stays mounted once opened (for this account and role), so a recording or meeting carries on while
+  // other pages are open.
+  const [languageKeptFor, setLanguageKeptFor] = useState<string | null>(null);
   // Narrow screens (phones): the navigation is a drawer from the right, opened from the top bar.
   const [navOpen, setNavOpen] = useState(false);
 
@@ -90,6 +95,10 @@ export default function App() {
   useEffect(() => {
     void restore();
   }, [restore]);
+
+  // Recordings left unfinished on this device (a crash, a closed app) are uploaded for the account in use.
+  const ownerId = session.state === "signedIn" ? session.user.id : null;
+  useEffect(() => setRecordingOwner(ownerId), [ownerId]);
 
   // New versions: checked shortly after start and every 6 hours (lib/updates.ts).
   useEffect(() => startUpdateChecks(), []);
@@ -127,6 +136,7 @@ export default function App() {
   }, []);
 
   async function logout() {
+    if (!(await endRecordingsFirst())) return;
     // Viewing as another account: "sign out" goes back to your own account instead.
     if (session.state === "signedIn" && session.user.viewed_by) return switchAccount(await api.viewAs(null));
     try {
@@ -202,6 +212,9 @@ export default function App() {
     setSession({ ...session, user });
   };
 
+  const mainKey = `${session.user.id}:${session.user.active_role ?? "all"}`;
+  if (page === "language" && languageKeptFor !== mainKey) setLanguageKeptFor(mainKey);
+
   return (
     <div className="shell">
       {/* Narrow screens only (CSS): the page's name and the menu button; the menu slides in from the right. */}
@@ -260,13 +273,15 @@ export default function App() {
         </div>
       </nav>
       {/* Keyed by account and role, so each page starts fresh with that account's data and permissions. */}
-      <main className="content" key={`${session.user.id}:${session.user.active_role ?? "all"}`}>
-        {page === "language" && (
-          <Language
-            tab={languageTab}
-            onTab={setLanguageTab}
-            canTranscribe={session.user.access.transcribe}
-          />
+      <main className="content" key={mainKey}>
+        {languageKeptFor === mainKey && (
+          <div hidden={page !== "language"}>
+            <Language
+              tab={languageTab}
+              onTab={setLanguageTab}
+              canTranscribe={session.user.access.transcribe}
+            />
+          </div>
         )}
         {/* Keyed by language too: they reload, so labels and messages from the server come in the new language. */}
         {page === "feed" && <DailyFeed key={lang} user={session.user} />}
