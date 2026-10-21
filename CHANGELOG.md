@@ -12,6 +12,10 @@ release, rename Unreleased to the version and date, add the version's compare li
 
 ## [Unreleased]
 
+## [0.4.4] - 2026-10-21
+
+A new logo, and other programs on this PC can send the desktop pet messages.
+
 ### Added
 - **Messages to the desktop pet from other programs on this PC** (`pet_inbox.rs`; README → Messages to the desktop
   pet): a `.txt` or `.json` file dropped in `%APPDATA%\com.chris.chrismanager\pet-inbox` is shown in the pet's bubble
@@ -337,7 +341,8 @@ Initial server scaffold.
 - Anthropic model prices seeded.
 - Setup, production and API documentation in `README.md`.
 
-[Unreleased]: https://github.com/chrisred66/My-Assistant/compare/v0.4.3...HEAD
+[Unreleased]: https://github.com/chrisred66/My-Assistant/compare/v0.4.4...HEAD
+[0.4.4]: https://github.com/chrisred66/My-Assistant/compare/v0.4.3...v0.4.4
 [0.4.3]: https://github.com/chrisred66/My-Assistant/compare/v0.4.2...v0.4.3
 [0.4.2]: https://github.com/chrisred66/My-Assistant/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/chrisred66/My-Assistant/compare/v0.4.0...v0.4.1
